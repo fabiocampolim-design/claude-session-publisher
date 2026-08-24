@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+
+# Generated archives never belong in the repo -- a transcript is a verbatim
+# record of a real conversation, including file paths, tool output and
+# anything that was pasted into it.
+*.html
+*.txt
+*.tex
+*.pdf
+*.aux
+*.log
+*.out
+*.toc
+missfont.log
+
+# ...except the two files the repo genuinely needs.
+!README.md
+!tests/baseline_html.txt
