@@ -1,4 +1,4 @@
-# claude-scribe
+# claude-session-publisher
 
 Turn a Claude Code session into a single self-contained document — HTML, plain
 text, LaTeX or PDF — with a fidelity report proving nothing was silently
@@ -19,6 +19,69 @@ python transcript_archiver.py <session-id>
 python transcript_archiver.py <session-id> --format html,text,latex,pdf
 python transcript_archiver.py --index          # rebuild the index page
 ```
+
+## Features
+
+- **Four formats from one parse** — HTML, plain text, LaTeX and PDF all render
+  from the same typed transcript model, so a turn cannot appear in one format
+  and vanish from another. `--fragment` emits a LaTeX body ready to `\input`
+  into a manuscript, transliterated to compile under pdflatex as well as
+  XeLaTeX.
+- **A fidelity report on every page** — each source record is rendered, folded
+  into an earlier turn, or counted as deliberately not rendered, and the three
+  numbers are reconciled against the source record count. Corrupt lines are
+  counted too. If anything escapes the parser, the page says so instead of
+  hiding it.
+- **Human turns are verbatim** — typed text and pastes are never run through a
+  markdown renderer, so a pasted traceback or columnar benchmark stays
+  byte-for-byte intact in every format.
+- **Session-chain resolution** — a resumed or bridged conversation is written
+  to a new file repeating the earlier records; the archiver finds the most
+  complete file by comparing record-uuid sets, follows genuine continuations,
+  and refuses to follow forks.
+- **Usage and cost accounting** — tokens per model, deduped per `requestId`
+  (naively summing the records over-reports output ~2.3× on tool-heavy
+  sessions), with cache reads, 5-minute vs 1-hour cache writes, and a
+  list-price cost estimate.
+- **The harness is visible** — hook output, injected files, skill loads,
+  compaction summaries and system records render in a collapsed lane with the
+  classification evidence for each, instead of vanishing or masquerading as
+  things you typed.
+- **Honest about thinking** — Claude Code requests thinking with
+  `display: "omitted"`, so the archive shows *that* Claude thought at a given
+  point and says plainly that the text never reaches the transcript.
+- **Self-contained HTML** — chat-style layout, light and dark themes,
+  filterable table of contents, per-lane toggles, keyboard navigation, no
+  external assets; plus an index page covering every session on disk.
+- **Tool I/O under your control** — `--tool-output on|off` independent of
+  format, and long outputs elided in the middle (`--full` to keep everything),
+  with every elision counted on the page.
+- **Survives real transcripts** — NUL bytes from UTF-16 console captures,
+  ANSI codes, emoji, 65,000-character lines, unresolved tool calls and
+  unparseable lines are all handled, counted, and reported.
+- Standard library only, one file, 65 tests, CI on Linux/Windows.
+
+## How this compares
+
+[simonw/claude-code-transcripts](https://github.com/simonw/claude-code-transcripts)
+is the best-known tool in this space: pip-installable, with an interactive
+session picker, paginated mobile-friendly HTML, git-commit timelines, and
+one-command publishing to a GitHub Gist. Other exporters
+([claude-session-exporter](https://github.com/rubicon/claude-session-exporter)
+and several like it) target Markdown for note vaults. This tool's focus is
+different: **archival fidelity and print** — the reconciled fidelity report,
+verbatim human turns, usage/cost accounting, chain resolution, and
+LaTeX/PDF output fit for a paper's appendix. If you want a quick shareable
+web link, use Simon's tool; if you want a complete, auditable record or a
+document, use this one.
+
+## Roadmap
+
+Gaps known and worth closing, roughly in order of value: rendering subagent
+transcripts (`<session>/subagents/agent-*.jsonl`) into the parent document
+rather than only counting them; a Markdown output format; pagination for very
+large sessions; an import adapter for claude.ai's `conversations.json` export;
+client-side search across an archive.
 
 ## Scope
 
