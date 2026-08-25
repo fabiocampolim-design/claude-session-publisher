@@ -934,6 +934,13 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                         turn["is_error"] = bool(c.get("is_error"))
                         turn["resolved"] = True
                         folded = True
+                        # The record carrying an Agent tool's result names the
+                        # spawned agent in a top-level toolUseResult.agentId --
+                        # the only durable link between the parent conversation
+                        # and <session-id>/subagents/agent-<id>.jsonl.
+                        tur = obj.get("toolUseResult")
+                        if isinstance(tur, dict) and tur.get("agentId"):
+                            turn["agent_id"] = tur["agentId"]
                     else:
                         t.turns.append({
                             "kind": "raw_block", "ts": ts,
@@ -1168,7 +1175,8 @@ def usage_table(t: Transcript, on: datetime.date) -> tuple[str, dict]:
     return table + note, out
 
 
-def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime) -> str:
+def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime,
+                     agents: list = (), subagents_on: bool = True) -> str:
     rendered = sum(t.rendered_types.values())
     counted = sum(t.counted_only.values())
 
@@ -1248,6 +1256,7 @@ def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime) 
     <p class="muted small">Which signal classified each string-content user record. <code>promptSource</code>
        and <code>origin.kind</code> are authoritative; the rest are fallbacks for older records.</p>
     <div class="table-wrap"><table class="mini"><tbody>{rows(t.classification)}</tbody></table></div>
+    {subagent_block(agents, subagents_on)}
     <h4>Caveats</h4>
     <ul>{''.join(f'<li>{w}</li>' for w in warn)}</ul>
     <p class="muted small">Source: <code>{esc(str(path))}</code> &middot;
@@ -1256,7 +1265,33 @@ def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime) 
 </section>"""
 
 
-def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
+def subagent_block(agents: list, subagents_on: bool) -> str:
+    """Fidelity-report table of the session's subagent transcript files.
+
+    Listed whether or not they are rendered: an omitted transcript the report
+    does not mention would be exactly the silent drop this tool exists to
+    prevent."""
+    if not agents:
+        return ""
+    note = ("Rendered in full in the Subagent transcripts section below."
+            if subagents_on else
+            "<strong>Not rendered</strong> (--subagents off) — listed here so the "
+            "omission is on the record. Their token usage is still counted above.")
+    rows = "".join(
+        f"<tr><td><code>agent-{esc(aid)}</code></td>"
+        f"<td class=num>{sum(at.record_types.values()):,}</td>"
+        f"<td class=num>{len(at.turns):,}</td></tr>"
+        for aid, _af, at in agents)
+    return (f"<h4>Subagent transcripts ({len(agents)})</h4>"
+            f'<p class="muted small">{note}</p>'
+            '<div class="table-wrap"><table class="mini"><tbody>'
+            "<tr><th>file</th><th>records</th><th>turns</th></tr>"
+            f"{rows}</tbody></table></div>")
+
+
+def render_turns(t: Transcript, anchor_prefix: str = "",
+                 agent_anchors: frozenset = frozenset()
+                 ) -> tuple[str, list[tuple[str, str, str]]]:
     body: list[str] = []
     toc: list[tuple[str, str, str]] = []
     counter = 0
@@ -1272,7 +1307,7 @@ def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
 
         if kind == "human":
             counter += 1
-            anchor = f"turn-{counter}"
+            anchor = f"{anchor_prefix}turn-{counter}"
             toc.append((anchor, truncate(turn["text"], 72), "human"))
             body.append(f"""
 <section class="turn human-turn" id="{anchor}" data-lane="human">
@@ -1282,7 +1317,7 @@ def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
 
         elif kind == "system":
             counter += 1
-            anchor = f"turn-{counter}"
+            anchor = f"{anchor_prefix}turn-{counter}"
             toc.append((anchor, turn["badge"], "system"))
             ev = f'<span class="evidence" title="how this was classified">{esc(turn.get("evidence", ""))}</span>'
             body.append(f"""
@@ -1293,7 +1328,7 @@ def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
 
         elif kind == "system_record":
             counter += 1
-            anchor = f"turn-{counter}"
+            anchor = f"{anchor_prefix}turn-{counter}"
             label = turn["badge"] + (f" — {turn['detail']}" if turn.get("detail") else "")
             toc.append((anchor, label, "system"))
             body_html = (f'<pre class="plain">{esc(turn["text"])}</pre>' if turn["text"] else "")
@@ -1345,6 +1380,11 @@ def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
             if not turn["resolved"]:
                 classes += " tool-pending"
             side = ' <span class="badge side">subagent</span>' if turn.get("sidechain") else ""
+            # Link only to transcripts that are actually on this page; an
+            # agent id with no discovered file would be a dead anchor.
+            if turn.get("agent_id") in agent_anchors:
+                side += (f' <a class="badge side" href="#subagent-{esc(turn["agent_id"])}">'
+                         "transcript &darr;</a>")
             io = [f"""
       <div class="io-block"><div class="io-label">Input</div>
         <pre class="plain">{esc(pretty_tool_input(turn["input"]))}</pre></div>"""]
@@ -1390,7 +1430,8 @@ def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
 def build(session_id: str, title: str, out_path: Path, summary_inner: str,
           projects_root: Path, follow_chain: bool, max_tool_output: int,
           formats: tuple = ("html",), fragment: bool = False,
-          tool_output: str = "on", sessions: dict | None = None) -> dict:
+          tool_output: str = "on", sessions: dict | None = None,
+          subagents: str = "on") -> dict:
     # scan_sessions reads every .jsonl under the root; the caller usually has
     # the scan already, so reuse it rather than reading them all a second time.
     if sessions is None:
@@ -1410,6 +1451,24 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     t = parse_transcript(path, max_tool_output)
     archived_at = datetime.datetime.now(datetime.timezone.utc)
 
+    # Subagent transcripts live beside the session at
+    # <session-id>/subagents/agent-<id>.jsonl, in the same record schema, and
+    # share no uuids with the parent file -- they are conversation the parent
+    # only points at. Parse them all regardless of the --subagents flag: their
+    # usage is real spend either way, and the fidelity report must list the
+    # files even when their content is not rendered.
+    agents: list[tuple[str, Path, Transcript]] = []
+    ag_dir = path.parent / path.stem / "subagents"
+    if ag_dir.is_dir():
+        for af in sorted(ag_dir.glob("agent-*.jsonl")):
+            agents.append((af.stem[len("agent-"):], af,
+                           parse_transcript(af, max_tool_output)))
+    include_agents = subagents == "on"
+    for _aid, _af, at in agents:
+        for model, agg in at.usage_by_model.items():
+            for k, v in agg.items():
+                t.usage_by_model[model][k] += v
+
     ts_dt = sorted(parse_ts(s) for s in t.timestamps)
     started, ended = (ts_dt[0], ts_dt[-1]) if ts_dt else (archived_at, archived_at)
     wall = ended - started
@@ -1424,8 +1483,36 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         active = fmt_dur_ms(int(acc.total_seconds() * 1000))
         active_note = "estimated (no turn_duration records; gaps over 20m ignored)"
 
-    body_html, toc = render_turns(t)
+    body_html, toc = render_turns(
+        t, agent_anchors=frozenset(a for a, _, _ in agents) if include_agents
+        else frozenset())
     usage_html, usage_totals = usage_table(t, started.date())
+    if agents:
+        usage_html += (f'<p class="muted small">Totals include '
+                       f'{len(agents)} subagent transcript(s).</p>')
+
+    subagents_html = ""
+    sub_toc: list[tuple[str, str, str]] = []
+    if agents and include_agents:
+        blocks = ['<section class="turn report-turn" id="subagents">'
+                  '<div class="turn-label"><span class="who">Subagent transcripts</span></div>'
+                  '<div class="turn-body report-body"><p>Conversations run by background '
+                  'agents this session spawned. Each lives in its own file beside the '
+                  'session and is rendered here in full, with the same rules as the '
+                  'main transcript.</p></div></section>']
+        for aid, af, at in agents:
+            inner, _ = render_turns(at, anchor_prefix=f"sa-{aid}-")
+            n_rec = sum(at.record_types.values())
+            blocks.append(f"""
+<section class="turn subagent-block" id="subagent-{esc(aid)}" data-lane="subagent">
+  <details>
+    <summary><span class="chip harness-chip">subagent</span> <code>agent-{esc(aid)}</code>
+      <span class="evidence">{n_rec:,} records &middot; {len(at.turns):,} turns</span></summary>
+    <div class="subagent-body">{inner}</div>
+  </details>
+</section>""")
+            sub_toc.append((f"subagent-{aid}", f"Subagent agent-{aid[:8]}", "system"))
+        subagents_html = "\n".join(blocks)
 
     chain_html = ""
     if related:
@@ -1466,6 +1553,11 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                  "Claude Code requests thinking with display=omitted, so the reasoning text is "
                  "never written to the transcript"),
         info_row("Tool calls", f"{t.rendered_types.get('tool call', 0):,}"),
+        info_row("Subagents",
+                 f"{len(agents)} transcript(s), "
+                 f"{sum(sum(at.record_types.values()) for _, _, at in agents):,} records"
+                 + ("" if include_agents else " (not rendered: --subagents off)"))
+        if agents else "",
         info_row("Harness events",
                  f"{sum(v for k, v in t.rendered_types.items() if k.startswith(('harness', 'system'))):,}"),
         info_row("Output tokens", f"{usage_totals['output']:,}"),
@@ -1478,7 +1570,7 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     toc_html = ['<a href="#summary" class="toc-item toc-key">Session summary</a>',
                 '<a href="#usage" class="toc-item toc-key">Usage &amp; cost</a>',
                 '<a href="#fidelity" class="toc-item toc-key">Fidelity report</a>']
-    for anchor, label, cls in toc:
+    for anchor, label, cls in toc + sub_toc:
         toc_html.append(f'<a href="#{anchor}" class="toc-item toc-{cls}">{esc(label)}</a>')
 
     meta = {
@@ -1500,6 +1592,11 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         "list_cost_usd": round(usage_totals["cost"], 4),
         "models": sorted(t.models),
         "chain": related,
+        "subagents": [{"agent_id": aid,
+                       "records": sum(at.record_types.values()),
+                       "turns": len(at.turns),
+                       "rendered": include_agents}
+                      for aid, _, at in agents],
     }
 
     subtitle = (f"{fmt_local(started)} – {fmt_local(ended)} · "
@@ -1519,8 +1616,10 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         chain_html=chain_html,
         toc_html="\n".join(toc_html),
         summary_html=summary_inner,
-        fidelity_html=fidelity_section(t, path, archived_at),
+        fidelity_html=fidelity_section(t, path, archived_at, agents=agents,
+                                       subagents_on=include_agents),
         body_html=body_html,
+        subagents_html=subagents_html,
         meta_json=json.dumps(meta, ensure_ascii=False).replace("</", "<\\/"),
         subtitle=esc(subtitle),
         css=_CSS,
@@ -1543,14 +1642,16 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     include_io = tool_output == "on"
 
     if "text" in formats:
-        body = emit_text(t, ctx, tool_output=include_io)
+        body = emit_text(t, ctx, tool_output=include_io, agents=agents,
+                         subagents_on=include_agents)
         q = out_path.with_suffix(".txt")
         q.write_text(body, encoding="utf-8")
         written.append((q, len(body)))
 
     if "latex" in formats or "pdf" in formats:
         src, tally = emit_latex(t, ctx, fragment=fragment,
-                                tool_output=include_io)
+                                tool_output=include_io, agents=agents,
+                                subagents_on=include_agents)
         stem = out_path.stem + ("_fragment" if fragment else "")
         q = out_path.with_name(stem + ".tex")
         q.write_text(src, encoding="utf-8")
@@ -1578,6 +1679,10 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
           f"events={sum(v for k, v in t.rendered_types.items() if k.startswith('system'))}")
     print(f"  records={sum(t.record_types.values())} rendered={sum(t.rendered_types.values())} "
           f"counted-only={sum(t.counted_only.values())} unresolved-tools={t.unresolved_tools}")
+    if agents:
+        print(f"  subagents={len(agents)} transcript(s), "
+              f"{sum(sum(at.record_types.values()) for _, _, at in agents)} records"
+              + ("" if include_agents else " (not rendered: --subagents off)"))
     print(f"  output={usage_totals['output']:,} tok  cache-read={usage_totals['cache_read']:,} tok  "
           f"list-cost=${usage_totals['cost']:,.2f}")
     return meta
@@ -1962,19 +2067,8 @@ def _turn_rule(label: str, ts: str, width: int, right: bool) -> list:
     return [tag, fill * min(width, max(len(tag), 60))]
 
 
-def emit_text(t, ctx: dict, tool_output: bool = True) -> str:
-    W = 100
-    bar = "=" * W
-    L = [bar, "  " + ctx["title"], "  session " + ctx["session_id"],
-         "  " + ctx["subtitle"], bar, ""]
-    if ctx["summary_text"]:
-        L += ["SESSION SUMMARY", "-" * 15, "", wrap_prose(ctx["summary_text"], W), ""]
-    L += ["FIDELITY REPORT", "-" * 15, ""]
-    for label, n in fidelity_lines(t):
-        L.append("  " + label.ljust(52) + format(n, ",").rjust(9))
-    n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
-    L += ["", wrap_prose(_format_note(tool_output, n_tools), W), ""]
-    for turn in t.turns:
+def _text_turns(turns, L, W, tool_output):
+    for turn in turns:
         ts = (turn.get("ts") or "")[:19].replace("T", " ")
         kind = turn["kind"]
         if kind == "human":
@@ -2006,6 +2100,32 @@ def emit_text(t, ctx: dict, tool_output: bool = True) -> str:
         else:
             L += [""] + _turn_rule(str(turn.get("badge", kind)).upper(), ts, W, right=False)
             L += ["", soft_wrap((turn.get("text") or "").rstrip(), W), ""]
+
+
+def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
+              subagents_on: bool = True) -> str:
+    W = 100
+    bar = "=" * W
+    L = [bar, "  " + ctx["title"], "  session " + ctx["session_id"],
+         "  " + ctx["subtitle"], bar, ""]
+    if ctx["summary_text"]:
+        L += ["SESSION SUMMARY", "-" * 15, "", wrap_prose(ctx["summary_text"], W), ""]
+    L += ["FIDELITY REPORT", "-" * 15, ""]
+    for label, n in fidelity_lines(t):
+        L.append("  " + label.ljust(52) + format(n, ",").rjust(9))
+    for aid, _af, at in agents:
+        L.append("  " + f"subagent transcript agent-{aid}"
+                 f"{'' if subagents_on else ' (not rendered)'}".ljust(52)
+                 + format(sum(at.record_types.values()), ",").rjust(9))
+    n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
+    L += ["", wrap_prose(_format_note(tool_output, n_tools), W), ""]
+    _text_turns(t.turns, L, W, tool_output)
+    if agents and subagents_on:
+        for aid, _af, at in agents:
+            L += ["", bar,
+                  f"  SUBAGENT TRANSCRIPT agent-{aid}  "
+                  f"({sum(at.record_types.values()):,} records)", bar]
+            _text_turns(at.turns, L, W, tool_output)
     return "\n".join(L) + "\n"
 
 
@@ -2100,7 +2220,8 @@ _FRAGMENT_HEAD = r"""% Transcript body only -- \input this into your own documen
 """
 
 
-def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False):
+def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
+               agents: list = (), subagents_on: bool = True):
     # A fragment goes into someone else's document, so it must survive whatever
     # engine that document uses -- pdflatex included. The standalone stays
     # XeLaTeX and keeps Unicode as itself.
@@ -2159,39 +2280,58 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False):
         return ("\\begin{" + env + "}{" + title + "}\n" + inner
                 + "\\end{" + env + "}\n")
 
-    for turn in t.turns:
-        ts = (turn.get("ts") or "")[:19].replace("T", " ")
-        kind = turn["kind"]
-        if kind == "human":
-            B.append(box("humanturn", "HUMAN \\hfill " + esc(ts),
-                         verb(turn["text"].rstrip())))
-        elif kind == "assistant":
-            B.append(box("claudeturn", "CLAUDE \\hfill " + esc(ts),
-                         md(turn.get("text", ""))))
-        elif kind == "thinking":
-            B.append(box("thinkturn", "THINKING \\hfill " + esc(ts),
-                         md(turn.get("text", "") or "(no text: display=omitted)")))
-        elif kind == "tool":
-            err = " [ERROR]" if turn.get("is_error") else ""
-            head = esc(shorten(str(turn.get("chip", "")) + " - "
-                               + str(turn.get("label", "")) + err))
-            title = "TOOL: " + head + " \\hfill " + esc(ts)
-            if not tool_output:
-                # A bare title box: the call is on the record, its payload is not.
-                B.append("\\begin{toolturn}{" + title + "}\\end{toolturn}\n")
-                continue
-            inner = verb(pretty_tool_input(turn.get("input") or ""))
-            if turn.get("output_text"):
-                inner += verb(turn["output_text"])
-            elif not turn.get("resolved"):
-                inner += inl("(no result in the source)") + "\n\n"
-            for _ in turn.get("output_images") or []:
-                inner += inl("[image omitted]") + "\n\n"
-            B.append(box("toolturn", title, inner))
-        else:
-            badge = esc(shorten(str(turn.get("badge", kind))))
-            B.append(box("systurn", badge + " \\hfill " + esc(ts),
-                         verb((turn.get("text") or "").rstrip())))
+    def emit_turns(turns):
+        for turn in turns:
+            ts = (turn.get("ts") or "")[:19].replace("T", " ")
+            kind = turn["kind"]
+            if kind == "human":
+                B.append(box("humanturn", "HUMAN \\hfill " + esc(ts),
+                             verb(turn["text"].rstrip())))
+            elif kind == "assistant":
+                B.append(box("claudeturn", "CLAUDE \\hfill " + esc(ts),
+                             md(turn.get("text", ""))))
+            elif kind == "thinking":
+                B.append(box("thinkturn", "THINKING \\hfill " + esc(ts),
+                             md(turn.get("text", "") or "(no text: display=omitted)")))
+            elif kind == "tool":
+                err = " [ERROR]" if turn.get("is_error") else ""
+                head = esc(shorten(str(turn.get("chip", "")) + " - "
+                                   + str(turn.get("label", "")) + err))
+                title = "TOOL: " + head + " \\hfill " + esc(ts)
+                if not tool_output:
+                    # A bare title box: the call is on the record, its payload is not.
+                    B.append("\\begin{toolturn}{" + title + "}\\end{toolturn}\n")
+                    continue
+                inner = verb(pretty_tool_input(turn.get("input") or ""))
+                if turn.get("output_text"):
+                    inner += verb(turn["output_text"])
+                elif not turn.get("resolved"):
+                    inner += inl("(no result in the source)") + "\n\n"
+                for _ in turn.get("output_images") or []:
+                    inner += inl("[image omitted]") + "\n\n"
+                B.append(box("toolturn", title, inner))
+            else:
+                badge = esc(shorten(str(turn.get("badge", kind))))
+                B.append(box("systurn", badge + " \\hfill " + esc(ts),
+                             verb((turn.get("text") or "").rstrip())))
+
+    emit_turns(t.turns)
+    if agents and subagents_on:
+        for aid, _af, at in agents:
+            B.append("\\section*{Subagent transcript: agent-" + esc(aid) + "}\n"
+                     "\\addcontentsline{toc}{section}{Subagent agent-"
+                     + esc(aid[:8]) + "}\n")
+            B.append(inl(f"({sum(at.record_types.values()):,} records; a background "
+                         "agent's own conversation, archived from its transcript "
+                         "file beside the session)") + "\n\n")
+            emit_turns(at.turns)
+    elif agents:
+        B.append("\\section*{Subagent transcripts (not rendered)}\n")
+        B.append(inl(f"{len(agents)} subagent transcript file(s) exist for this "
+                     "session but were not rendered (--subagents off): "
+                     + ", ".join(f"agent-{a}" for a, _, _ in agents)
+                     + ". Their token usage is included in the usage table.")
+                 + "\n\n")
     if not fragment:
         B.append("\\end{document}\n")
     removed = []
@@ -2562,6 +2702,14 @@ li{margin:3px 0}
 h1,h2,h3,h4,h5,h6{margin:15px 0 7px;line-height:1.3}
 hr{border:none;border-top:1px solid var(--line);margin:16px 0}
 del{opacity:.65}
+.subagent-block>details{background:var(--card);border:1px solid var(--line);
+  border-left:4px solid var(--claude);border-radius:0 10px 10px 0;box-shadow:var(--shadow)}
+.subagent-block>details>summary{cursor:pointer;padding:9px 14px;font-size:13px;list-style:none;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.subagent-block>details>summary::-webkit-details-marker{display:none}
+.subagent-block>details>summary::before{content:"\\25B8";color:var(--ink-faint)}
+.subagent-block>details[open]>summary::before{content:"\\25BE"}
+.subagent-body{padding:4px 14px 14px;border-top:1px dashed var(--line)}
 .pill{font-size:10.5px;padding:2px 8px;border-radius:11px;font-weight:700;white-space:nowrap}
 .pill.ok{background:var(--human-bg);color:var(--human)}
 .pill.stale{background:var(--system-bg);color:var(--system)}
@@ -2571,7 +2719,7 @@ del{opacity:.65}
 
 _JS = """
 (function(){
-  var lanes = ['thinking','tool','harness','system'];
+  var lanes = ['thinking','tool','harness','system','subagent'];
   lanes.forEach(function(lane){
     var box = document.getElementById('lane-' + lane);
     if (!box) return;
@@ -2635,6 +2783,7 @@ _TEMPLATE = """<!doctype html>
         <label><input type="checkbox" id="lane-tool" checked> tools</label>
         <label><input type="checkbox" id="lane-harness" checked> harness</label>
         <label><input type="checkbox" id="lane-system" checked> events</label>
+        <label><input type="checkbox" id="lane-subagent" checked> subagents</label>
       </div>
       <div class="btnrow">
         <button id="expand-all" type="button">Expand all</button>
@@ -2665,6 +2814,7 @@ _TEMPLATE = """<!doctype html>
     </section>
     {fidelity_html}
     {body_html}
+    {subagents_html}
   </main>
 </div>
 <script>{js}</script>
@@ -2777,6 +2927,11 @@ def main() -> None:
                          "a large session into a several-hundred-page document")
     ap.add_argument("--fragment", action="store_true",
                     help="LaTeX body only, no preamble -- ready to \\input into another document")
+    ap.add_argument("--subagents", choices=("on", "off"), default="on",
+                    help="render subagent transcripts (<session>/subagents/agent-*.jsonl) "
+                         "as appendix sections (default: on). With off, the files are "
+                         "still listed in the fidelity report and their usage still "
+                         "counts, but their content is not rendered")
     ap.add_argument("--index", action="store_true",
                     help="rebuild index.html for the archive directory and exit")
     args = ap.parse_args()
@@ -2821,7 +2976,8 @@ def main() -> None:
           follow_chain=not args.no_follow_chain,
           max_tool_output=0 if args.full else args.max_tool_output,
           formats=formats, fragment=args.fragment,
-          tool_output=args.tool_output, sessions=sessions)
+          tool_output=args.tool_output, sessions=sessions,
+          subagents=args.subagents)
 
 
 if __name__ == "__main__":

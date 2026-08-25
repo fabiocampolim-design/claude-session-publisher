@@ -74,8 +74,9 @@ def assistant(i, blocks, req):
                                                   "ephemeral_1h_input_tokens": 0}}}})
 
 
-def tool_result(i, tid, content, is_error=False):
+def tool_result(i, tid, content, is_error=False, extra=None):
     add({**BASE, "type": "user", "uuid": uid(i), "timestamp": ts(),
+         **(extra or {}),
          "message": {"role": "user",
                      "content": [{"type": "tool_result", "tool_use_id": tid,
                                   "content": content, "is_error": is_error}]}})
@@ -157,6 +158,51 @@ assistant(9, [
 ], "req_4")
 # tool_4 is deliberately left without a result: an interrupted call
 
+# 3b -- a background subagent. The parent holds only the Agent tool call and
+# its launch acknowledgement; the agent's own conversation lives in a separate
+# file at <session-id>/subagents/agent-<agentId>.jsonl. The link is the
+# top-level toolUseResult.agentId on the record carrying the tool_result
+# (verified against real transcripts).
+AGENT_ID = "e000000000000001"
+assistant(20, [
+    {"type": "text", "text": "I'll have a subagent double-check the zero mode."},
+    {"type": "tool_use", "id": "tool_agent", "name": "Agent",
+     "input": {"description": "Verify zero-mode protection",
+               "prompt": "Check whether the zero mode is symmetry-protected.",
+               "subagent_type": "general-purpose"}},
+], "req_agent_launch")
+tool_result(21, "tool_agent",
+            "Async agent launched (running in the background).",
+            extra={"toolUseResult": {"isAsync": True,
+                                     "status": "async_launched",
+                                     "agentId": AGENT_ID}})
+
+AGENT_BASE = {**BASE, "isSidechain": True, "agentId": AGENT_ID}
+agent_records = [
+    {**AGENT_BASE, "type": "user", "uuid": uid(101), "timestamp": ts(),
+     "message": {"role": "user",
+                 "content": "Check whether the zero mode is symmetry-protected."}},
+    {**AGENT_BASE, "type": "assistant", "uuid": uid(102), "timestamp": ts(),
+     "requestId": "agent_req_1",
+     "message": {"role": "assistant", "model": "claude-opus-5",
+                 "content": [
+                     {"type": "text", "text":
+                      "SUBAGENT-MARKER: the zero mode is protected by chiral "
+                      "symmetry -- the gap at 10⁻⁶ eV cannot lift it."},
+                     {"type": "tool_use", "id": "agent_tool_1", "name": "Bash",
+                      "input": {"command": "python check_symmetry.py",
+                                "description": "verify chiral symmetry"}},
+                 ],
+                 "usage": {"input_tokens": 80, "output_tokens": 1234,
+                           "cache_read_input_tokens": 100,
+                           "cache_creation": {"ephemeral_5m_input_tokens": 10,
+                                              "ephemeral_1h_input_tokens": 0}}}},
+    {**AGENT_BASE, "type": "user", "uuid": uid(103), "timestamp": ts(),
+     "message": {"role": "user",
+                 "content": [{"type": "tool_result", "tool_use_id": "agent_tool_1",
+                              "content": "chiral symmetry: PRESENT", "is_error": False}]}},
+]
+
 # 4 -- a human turn quoting the archiver's own template placeholders. These
 # literals appear in any session spent working on this script; substitution
 # must never touch them.
@@ -193,3 +239,11 @@ lines = [json.dumps(r, ensure_ascii=False) for r in records]
 lines.append('{"type": "user", "uuid": "trunc — this line is deliberately not JSON')
 OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 print(f"wrote {OUT} ({len(records)} records + 1 corrupt line)")
+
+AGENT_DIR = OUT.parent / SESSION / "subagents"
+AGENT_DIR.mkdir(parents=True, exist_ok=True)
+AGENT_OUT = AGENT_DIR / f"agent-{AGENT_ID}.jsonl"
+AGENT_OUT.write_text(
+    "\n".join(json.dumps(r, ensure_ascii=False) for r in agent_records) + "\n",
+    encoding="utf-8")
+print(f"wrote {AGENT_OUT} ({len(agent_records)} records)")

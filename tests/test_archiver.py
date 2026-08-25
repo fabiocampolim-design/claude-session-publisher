@@ -431,6 +431,62 @@ try:
         check("attachment record exercises the real schema policy path",
               t.rendered_types.get("harness (hook_success)", 0) == 1,
               str(dict(t.rendered_types)))
+
+        # ------------------------------------------------------------------
+        # A background subagent's conversation lives in its own file at
+        # <session-id>/subagents/agent-<id>.jsonl. Content fidelity means that
+        # text is part of the record: rendered in every format, linked from
+        # the tool call that spawned it, and reconciled like everything else.
+        print("\n[12] Subagent transcripts are rendered, linked and reconciled")
+        AID = "e000000000000001"
+        agent_file = ROOT / SAMPLE / "subagents" / f"agent-{AID}.jsonl"
+        check("sample provides a subagent transcript", agent_file.exists(),
+              str(agent_file))
+        tmp4 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test12-"))
+        try:
+            p = run(SAMPLE, "html,text,latex", tmp4)
+            check("export with subagents exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            page = next(iter(tmp4.glob("*.html")), None)
+            page = page.read_text(encoding="utf-8", errors="replace") if page else ""
+            check("subagent text is rendered in the HTML",
+                  "SUBAGENT-MARKER" in page, "marker missing from page")
+            check("subagent section carries an anchor",
+                  f'id="subagent-{AID}"' in page, "no anchor")
+            check("the spawning tool call links to the transcript",
+                  f'href="#subagent-{AID}"' in page, "no link from tool call")
+            check("fidelity report names the subagent file",
+                  f"agent-{AID}" in page, "not in fidelity report")
+            m = re.search(r'id="archive-meta">(.*?)</script>', page, re.S)
+            meta = json.loads(m.group(1).replace("<\\/", "</")) if m else {}
+            # main: 6 requests x 340 output tokens; agent: 1 x 1234
+            check("usage totals include the subagent's tokens",
+                  meta.get("output_tokens") == 6 * 340 + 1234,
+                  f"output_tokens={meta.get('output_tokens')}")
+            txt = next(iter(tmp4.glob("*.txt")), None)
+            txt = txt.read_text(encoding="utf-8", errors="replace") if txt else ""
+            check("subagent text is in the text export",
+                  "SUBAGENT-MARKER" in txt, "marker missing")
+            check("text export labels the subagent section",
+                  f"agent-{AID}" in txt, "no section label")
+            tex = next((f for f in tmp4.glob("*.tex")
+                        if "fragment" not in f.name), None)
+            tex = tex.read_text(encoding="utf-8", errors="replace") if tex else ""
+            check("subagent text is in the LaTeX export",
+                  "SUBAGENT-MARKER" in tex, "marker missing")
+
+            p = run(SAMPLE, "html", tmp4, extra=("--subagents", "off", "--out",
+                                                 str(tmp4 / "noagents.html")))
+            check("--subagents off exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            off = (tmp4 / "noagents.html")
+            off = off.read_text(encoding="utf-8", errors="replace") if off.exists() else ""
+            check("--subagents off omits the transcript",
+                  "SUBAGENT-MARKER" not in off, "marker still present")
+            check("--subagents off still discloses the file in the fidelity report",
+                  f"agent-{AID}" in off, "file not disclosed")
+        finally:
+            shutil.rmtree(tmp4, ignore_errors=True)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:
