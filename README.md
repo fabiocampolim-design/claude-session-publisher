@@ -1,7 +1,8 @@
-# transcript-archiver
+# claude-scribe
 
 Turn a Claude Code session into a single self-contained document — HTML, plain
-text, LaTeX or PDF — without silently dropping anything.
+text, LaTeX or PDF — with a fidelity report proving nothing was silently
+dropped.
 
 Claude Code writes every session to a JSON Lines file under
 `~/.claude/projects/`. That file is complete but unreadable: interleaved
@@ -18,6 +19,19 @@ python transcript_archiver.py <session-id>
 python transcript_archiver.py <session-id> --format html,text,latex,pdf
 python transcript_archiver.py --index          # rebuild the index page
 ```
+
+## Scope
+
+The scribe reads the transcript files Claude Code writes to your disk, so what
+it can archive is decided by where a session's transcript lives:
+
+| Claude surface | Archivable? |
+|---|---|
+| Claude Code CLI | **Yes** — its native format. |
+| Claude Code desktop app | **Yes** — sessions run locally and write the same files. |
+| Claude Code web/mobile, bridged to your machine | **Yes** — the local side writes a transcript, and bridge records are chain-resolved so the pieces come out as one conversation. |
+| Claude Code cloud sessions (never bridged) | No — nothing is written to your disk. |
+| claude.ai chats, Claude Desktop chat, mobile app | No — different product, server-side storage, different format. An import adapter for claude.ai's data export (`conversations.json`) would be a natural extension: the rendering layer is format-agnostic, so it needs one new parser, not new output formats. |
 
 ## Formats
 
