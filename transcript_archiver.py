@@ -1326,14 +1326,18 @@ def subagent_block(agents: list, subagents_on: bool) -> str:
 
 
 def render_turns(t: Transcript, anchor_prefix: str = "",
-                 agent_anchors: frozenset = frozenset()
-                 ) -> tuple[str, list[tuple[str, str, str]]]:
+                 agent_href: dict | None = None
+                 ) -> tuple[list, list[tuple[str, str, str]]]:
+    """-> (units, toc): one (html, anchor-or-None) unit per turn, so a caller
+    can join them into one page or chunk them across several."""
     body: list[str] = []
+    anchors: list = []
     toc: list[tuple[str, str, str]] = []
     counter = 0
 
     for turn in t.turns:
         kind = turn["kind"]
+        cur_anchor = None
         ts_attr = ""
         ts_disp = ""
         if turn.get("ts"):
@@ -1344,6 +1348,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
         if kind == "human":
             counter += 1
             anchor = f"{anchor_prefix}turn-{counter}"
+            cur_anchor = anchor
             toc.append((anchor, truncate(turn["text"], 72), "human"))
             body.append(f"""
 <section class="turn human-turn" id="{anchor}" data-lane="human">
@@ -1354,6 +1359,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
         elif kind == "system":
             counter += 1
             anchor = f"{anchor_prefix}turn-{counter}"
+            cur_anchor = anchor
             toc.append((anchor, turn["badge"], "system"))
             ev = f'<span class="evidence" title="how this was classified">{esc(turn.get("evidence", ""))}</span>'
             body.append(f"""
@@ -1365,6 +1371,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
         elif kind == "system_record":
             counter += 1
             anchor = f"{anchor_prefix}turn-{counter}"
+            cur_anchor = anchor
             label = turn["badge"] + (f" — {turn['detail']}" if turn.get("detail") else "")
             toc.append((anchor, label, "system"))
             body_html = (f'<pre class="plain">{esc(turn["text"])}</pre>' if turn["text"] else "")
@@ -1418,8 +1425,8 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             side = ' <span class="badge side">subagent</span>' if turn.get("sidechain") else ""
             # Link only to transcripts that are actually on this page; an
             # agent id with no discovered file would be a dead anchor.
-            if turn.get("agent_id") in agent_anchors:
-                side += (f' <a class="badge side" href="#subagent-{esc(turn["agent_id"])}">'
+            if agent_href and turn.get("agent_id") in agent_href:
+                side += (f' <a class="badge side" href="{esc(agent_href[turn["agent_id"]])}">'
                          "transcript &darr;</a>")
             io = [f"""
       <div class="io-block"><div class="io-label">Input</div>
@@ -1460,14 +1467,17 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
   </details>
 </section>""")
 
-    return "\n".join(body), toc
+        while len(anchors) < len(body):
+            anchors.append(cur_anchor)
+
+    return list(zip(body, anchors)), toc
 
 
 def build(session_id: str, title: str, out_path: Path, summary_inner: str,
           projects_root: Path, follow_chain: bool, max_tool_output: int,
           formats: tuple = ("html",), fragment: bool = False,
           tool_output: str = "on", sessions: dict | None = None,
-          subagents: str = "on") -> dict:
+          subagents: str = "on", paginate: int = 0) -> dict:
     # scan_sessions reads every .jsonl under the root; the caller usually has
     # the scan already, so reuse it rather than reading them all a second time.
     if sessions is None:
@@ -1519,36 +1529,56 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         active = fmt_dur_ms(int(acc.total_seconds() * 1000))
         active_note = "estimated (no turn_duration records; gaps over 20m ignored)"
 
-    body_html, toc = render_turns(
-        t, agent_anchors=frozenset(a for a, _, _ in agents) if include_agents
-        else frozenset())
+    # ---- pagination layout, decided before any HTML is rendered ------------
+    # Units: one per main turn, then (when rendered) one subagent header and
+    # one per subagent block. Knowing each unit's page up front lets links to
+    # a subagent transcript carry the right page file with no post-editing.
+    n_turn_units = len(t.turns)
+    have_blocks = bool(agents) and include_agents
+    total_units = n_turn_units + (1 + len(agents) if have_blocks else 0)
+    per_page = max(0, paginate)
+    n_pages = max(1, -(-total_units // per_page)) if per_page else 1
+
+    def page_of(unit_idx: int) -> int:
+        return unit_idx // per_page + 1 if per_page else 1
+
+    def page_file(k: int) -> str:
+        return out_path.name if k == 1 else f"{out_path.stem}_p{k}.html"
+
+    agent_href = {}
+    if have_blocks:
+        for i, (aid, _af, _at) in enumerate(agents):
+            k = page_of(n_turn_units + 1 + i)
+            agent_href[aid] = ("" if k == 1 else page_file(k)) + f"#subagent-{aid}"
+
+    units, toc = render_turns(t, agent_href=agent_href)
     usage_html, usage_totals = usage_table(t, started.date())
     if agents:
         usage_html += (f'<p class="muted small">Totals include '
                        f'{len(agents)} subagent transcript(s).</p>')
 
-    subagents_html = ""
     sub_toc: list[tuple[str, str, str]] = []
-    if agents and include_agents:
-        blocks = ['<section class="turn report-turn" id="subagents">'
-                  '<div class="turn-label"><span class="who">Subagent transcripts</span></div>'
-                  '<div class="turn-body report-body"><p>Conversations run by background '
-                  'agents this session spawned. Each lives in its own file beside the '
-                  'session and is rendered here in full, with the same rules as the '
-                  'main transcript.</p></div></section>']
+    if have_blocks:
+        units.append((
+            '<section class="turn report-turn" id="subagents">'
+            '<div class="turn-label"><span class="who">Subagent transcripts</span></div>'
+            '<div class="turn-body report-body"><p>Conversations run by background '
+            'agents this session spawned. Each lives in its own file beside the '
+            'session and is rendered here in full, with the same rules as the '
+            'main transcript.</p></div></section>', "subagents"))
         for aid, af, at in agents:
-            inner, _ = render_turns(at, anchor_prefix=f"sa-{aid}-")
+            inner_units, _ = render_turns(at, anchor_prefix=f"sa-{aid}-")
+            inner = "".join(h for h, _a in inner_units)
             n_rec = sum(at.record_types.values())
-            blocks.append(f"""
+            units.append((f"""
 <section class="turn subagent-block" id="subagent-{esc(aid)}" data-lane="subagent">
   <details>
     <summary><span class="chip harness-chip">subagent</span> <code>agent-{esc(aid)}</code>
       <span class="evidence">{n_rec:,} records &middot; {len(at.turns):,} turns</span></summary>
     <div class="subagent-body">{inner}</div>
   </details>
-</section>""")
+</section>""", f"subagent-{aid}"))
             sub_toc.append((f"subagent-{aid}", f"Subagent agent-{aid[:8]}", "system"))
-        subagents_html = "\n".join(blocks)
 
     chain_html = ""
     if related:
@@ -1603,11 +1633,37 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         info_row("Skills used", esc(", ".join(sorted(t.skills)))) if t.skills else "",
     ])
 
-    toc_html = ['<a href="#summary" class="toc-item toc-key">Session summary</a>',
-                '<a href="#usage" class="toc-item toc-key">Usage &amp; cost</a>',
-                '<a href="#fidelity" class="toc-item toc-key">Fidelity report</a>']
-    for anchor, label, cls in toc + sub_toc:
-        toc_html.append(f'<a href="#{anchor}" class="toc-item toc-{cls}">{esc(label)}</a>')
+    anchor_page = {"summary": 1, "usage": 1, "fidelity": 1}
+    for i, (_h, a) in enumerate(units):
+        if a:
+            anchor_page[a] = page_of(i)
+
+    def href_to(anchor: str, cur_page: int) -> str:
+        p = anchor_page.get(anchor, 1)
+        return f"#{anchor}" if p == cur_page else f"{page_file(p)}#{anchor}"
+
+    def toc_for(cur_page: int) -> str:
+        items = [
+            f'<a href="{href_to("summary", cur_page)}" class="toc-item toc-key">Session summary</a>',
+            f'<a href="{href_to("usage", cur_page)}" class="toc-item toc-key">Usage &amp; cost</a>',
+            f'<a href="{href_to("fidelity", cur_page)}" class="toc-item toc-key">Fidelity report</a>']
+        for anchor, label, cls in toc + sub_toc:
+            items.append(f'<a href="{href_to(anchor, cur_page)}" '
+                         f'class="toc-item toc-{cls}">{esc(label)}</a>')
+        return "\n".join(items)
+
+    def nav_for(cur_page: int) -> str:
+        if n_pages == 1:
+            return ""
+        parts = [f"Page {cur_page} of {n_pages}"]
+        if cur_page > 1:
+            parts.append(f'<a href="{page_file(cur_page - 1)}">&larr; prev</a>')
+        for k in range(1, n_pages + 1):
+            parts.append(f"<strong>{k}</strong>" if k == cur_page
+                         else f'<a href="{page_file(k)}">{k}</a>')
+        if cur_page < n_pages:
+            parts.append(f'<a href="{page_file(cur_page + 1)}">next &rarr;</a>')
+        return '<nav class="page-nav">' + " &middot; ".join(parts) + "</nav>"
 
     meta = {
         "archiver_version": VERSION,
@@ -1633,6 +1689,7 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                        "turns": len(at.turns),
                        "rendered": include_agents}
                       for aid, _, at in agents],
+        "pages": [page_file(k) for k in range(1, n_pages + 1)],
     }
 
     subtitle = (f"{fmt_local(started)} – {fmt_local(ended)} · "
@@ -1640,33 +1697,47 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                 f"{t.rendered_types.get('tool call', 0)} tool calls · "
                 f"${usage_totals['cost']:,.2f} at list price")
 
-    # CSS and JS ride in as .format *values*: format never scans values for
-    # braces or fields, so neither their own braces nor any placeholder-looking
-    # text inside the transcript body can trigger a second substitution.
-    # "</" is escaped in the embedded JSON ("<\/" is valid JSON) so a title
-    # containing "</script>" cannot terminate the metadata block early.
-    page = _TEMPLATE.format(
-        title=esc(title),
-        session_info=session_info,
-        usage_html=usage_html,
-        chain_html=chain_html,
-        toc_html="\n".join(toc_html),
-        summary_html=summary_inner,
-        fidelity_html=fidelity_section(t, path, archived_at, agents=agents,
-                                       subagents_on=include_agents),
-        body_html=body_html,
-        subagents_html=subagents_html,
-        meta_json=json.dumps(meta, ensure_ascii=False).replace("</", "<\\/"),
-        subtitle=esc(subtitle),
-        css=_CSS,
-        js=_JS,
-    )
+    lead_html = (chain_html
+                 + '<section class="turn summary-turn" id="summary">'
+                   '<div class="turn-label"><span class="who">Session summary</span></div>'
+                   f'<div class="turn-body summary-body">{summary_inner}</div></section>'
+                 + '<section class="turn usage-turn" id="usage">'
+                   '<div class="turn-label"><span class="who">Usage &amp; cost</span></div>'
+                   f'<div class="turn-body usage-body">{usage_html}</div></section>'
+                 + fidelity_section(t, path, archived_at, agents=agents,
+                                    subagents_on=include_agents))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     written = []
     if "html" in formats:
-        out_path.write_text(page, encoding="utf-8")
-        written.append((out_path, len(page)))
+        # CSS and JS ride in as .format *values*: format never scans values
+        # for braces or fields, so neither their own braces nor any
+        # placeholder-looking text inside the transcript body can trigger a
+        # second substitution. "</" is escaped in the embedded JSON ("<\/" is
+        # valid JSON) so a title containing "</script>" cannot terminate the
+        # metadata block early.
+        for k in range(1, n_pages + 1):
+            chunk = (units[(k - 1) * per_page: k * per_page] if per_page
+                     else units)
+            page = _TEMPLATE.format(
+                title=esc(title) + (f" — page {k}/{n_pages}" if n_pages > 1 else ""),
+                session_info=session_info,
+                toc_html=toc_for(k),
+                page_nav=nav_for(k),
+                lead_html=lead_html if k == 1 else "",
+                body_html="\n".join(h for h, _a in chunk),
+                meta_json=(json.dumps(meta, ensure_ascii=False)
+                           if k == 1 else
+                           json.dumps({"continuation_of": used, "page": k},
+                                      ensure_ascii=False)
+                           ).replace("</", "<\\/"),
+                subtitle=esc(subtitle),
+                css=_CSS,
+                js=_JS,
+            )
+            q = out_path if k == 1 else out_path.with_name(page_file(k))
+            q.write_text(page, encoding="utf-8")
+            written.append((q, len(page)))
 
     ctx = {"title": title, "session_id": used, "subtitle": subtitle,
            "summary_text": html_fragment_to_text(summary_inner) if summary_inner else ""}
@@ -2611,10 +2682,21 @@ def load_claude_ai_export(path: Path) -> list[dict]:
 # Index mode
 # ---------------------------------------------------------------------------
 
+def _age_label(seconds: float) -> str:
+    if seconds < 90:
+        return "now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)}h"
+    return f"{int(seconds // 86400)}d"
+
+
 def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
-                sessions: dict | None = None) -> None:
+                sessions: dict | None = None, refresh: int | None = None) -> None:
     if sessions is None:
         sessions = scan_sessions(projects_root)
+    now = datetime.datetime.now(datetime.timezone.utc)
     archived: dict[str, dict] = {}
     for f in sorted(archive_dir.glob("*.html")):
         if f.name == out_path.name:
@@ -2633,6 +2715,8 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
         if not meta:
             sid = f.name.split("_")[0]
             meta = {"session_id": sid, "title": f.stem, "archiver_version": "1.x (no metadata)"}
+        if meta.get("continuation_of"):
+            continue                     # page 2+ of a paginated archive
         meta["file"] = f.name
         meta["size_mb"] = f.stat().st_size / 1e6
         archived[meta["session_id"]] = meta
@@ -2708,8 +2792,27 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
             detail += f" &middot; source: {esc(info.source)}"
         status_key = re.sub(r"<[^>]+>", "", status).strip()
         title_key = re.sub(r"<[^>]+>", "", link).strip().lower()
+        # Activity: computed at generation time, then left to decay in the
+        # browser -- the page's JS recomputes the age from data-ts, so a
+        # session can only go quiet on screen, never freshly "active", until
+        # the index is regenerated (see --watch).
+        age = None
+        if info.last:
+            try:
+                age = (now - parse_ts(info.last)).total_seconds()
+            except ValueError:
+                age = None
+        if age is None:
+            act_cell = '<td class="activity" data-k="~"></td>'
+        else:
+            cls = "act" if age < 600 else "quiet"
+            dot = "&#9679; " if age < 600 else ""
+            act_cell = (f'<td class="activity" data-ts="{esc(info.last)}" '
+                        f'data-k="{esc(info.last)}">'
+                        f'<span class="pill {cls}">{dot}{_age_label(age)}</span></td>')
         rows.append(
             f'<tr><td data-k="{esc(status_key)}">{status}</td>'
+            + act_cell +
             f'<td data-k="{esc(sid)}"><code>{esc(sid[:8])}</code></td>'
             f'<td data-k="{esc(title_key)}">{link}<div class="muted small">{detail}</div></td>'
             f'<td class="num" data-k="{esc(info.first or "")}" title="{esc((info.first or "")[:19])} UTC">{esc(started)}'
@@ -2727,6 +2830,8 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
         summary=(f"{len(sessions)} sessions on disk &middot; {counts['archived']} archived &middot; "
                  f"{counts['missing']} not archived directly"),
         generated=esc(fmt_local(datetime.datetime.now(datetime.timezone.utc))),
+        refresh_meta=(f'<meta http-equiv="refresh" content="{int(refresh)}">\n'
+                      if refresh else ""),
         css=_CSS,
         index_css=_INDEX_CSS,
         index_js=_INDEX_JS,
@@ -2937,8 +3042,16 @@ del{opacity:.65}
 .subagent-block>details>summary::before{content:"\\25B8";color:var(--ink-faint)}
 .subagent-block>details[open]>summary::before{content:"\\25BE"}
 .subagent-body{padding:4px 14px 14px;border-top:1px dashed var(--line)}
+.page-nav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;
+  padding:8px 14px;margin:0 0 18px;border:1px solid var(--line);border-radius:9px;
+  background:var(--card);color:var(--ink-soft)}
+.page-nav a{text-decoration:none}
+.page-nav strong{color:var(--ink)}
 .pill{font-size:10.5px;padding:2px 8px;border-radius:11px;font-weight:700;white-space:nowrap}
 .pill.ok{background:var(--human-bg);color:var(--human)}
+.pill.act{background:var(--human-bg);color:var(--human);animation:actpulse 2.4s ease-in-out infinite}
+.pill.quiet{background:var(--line-soft);color:var(--ink-faint);font-weight:600}
+@keyframes actpulse{0%,100%{opacity:1}50%{opacity:.55}}
 .pill.stale{background:var(--system-bg);color:var(--system)}
 .pill.covered{background:var(--claude-bg);color:var(--claude)}
 .pill.missing{background:var(--error-bg);color:var(--error)}
@@ -3030,18 +3143,10 @@ _TEMPLATE = """<!doctype html>
          human turns, <kbd>/</kbd> filters the contents list. Thinking, tool I/O and harness events are
          collapsed &mdash; use the toggles to hide a lane entirely.</p>
     </header>
-    {chain_html}
-    <section class="turn summary-turn" id="summary">
-      <div class="turn-label"><span class="who">Session summary</span></div>
-      <div class="turn-body summary-body">{summary_html}</div>
-    </section>
-    <section class="turn usage-turn" id="usage">
-      <div class="turn-label"><span class="who">Usage &amp; cost</span></div>
-      <div class="turn-body usage-body">{usage_html}</div>
-    </section>
-    {fidelity_html}
+    {page_nav}
+    {lead_html}
     {body_html}
-    {subagents_html}
+    {page_nav}
   </main>
 </div>
 <script>{js}</script>
@@ -3055,7 +3160,7 @@ _INDEX_TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <title>Claude Code session archive</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>{css}
+{refresh_meta}<style>{css}
 {index_css}
 </style>
 </head>
@@ -3068,10 +3173,12 @@ _INDEX_TEMPLATE = """<!doctype html>
      another transcript that <em>is</em> archived, so its records live in that file.</p>
 </header>
 <div class="table-wrap"><table>
-<thead><tr><th class="sortable" data-i="0">status</th><th class="sortable" data-i="1">id</th>
-<th class="sortable" data-i="2">session</th>
-<th class="sortable num" data-i="3">started</th>
-<th class="sortable num sorted-desc" data-i="4">last record</th></tr></thead>
+<thead><tr><th class="sortable" data-i="0">status</th>
+<th class="sortable" data-i="1">activity</th>
+<th class="sortable" data-i="2">id</th>
+<th class="sortable" data-i="3">session</th>
+<th class="sortable num" data-i="4">started</th>
+<th class="sortable num sorted-desc" data-i="5">last record</th></tr></thead>
 <tbody>{rows}</tbody>
 </table></div>
 </main></div>
@@ -3082,6 +3189,30 @@ _INDEX_TEMPLATE = """<!doctype html>
 
 _INDEX_JS = """
 (function () {
+  /* Activity ages decay live: recompute from data-ts once a minute. The page
+     cannot see new records without regeneration (see --watch), so a session
+     can only go quiet on screen, never freshly active. */
+  function ageLabel(s) {
+    if (s < 90) return 'now';
+    if (s < 3600) return Math.floor(s / 60) + 'm';
+    if (s < 86400) return Math.floor(s / 3600) + 'h';
+    return Math.floor(s / 86400) + 'd';
+  }
+  function tick() {
+    document.querySelectorAll('td.activity[data-ts]').forEach(function (td) {
+      var t = Date.parse(td.getAttribute('data-ts'));
+      if (isNaN(t)) return;
+      var s = (Date.now() - t) / 1000;
+      var pill = td.querySelector('.pill');
+      if (!pill) return;
+      var active = s < 600;
+      pill.className = 'pill ' + (active ? 'act' : 'quiet');
+      pill.innerHTML = (active ? '\\u25CF ' : '') + ageLabel(s);
+    });
+  }
+  tick();
+  setInterval(tick, 60000);
+
   var table = document.querySelector('table');
   if (!table) return;
   var tbody = table.tBodies[0];
@@ -3158,6 +3289,10 @@ def main() -> None:
                          "a large session into a several-hundred-page document")
     ap.add_argument("--fragment", action="store_true",
                     help="LaTeX body only, no preamble -- ready to \\input into another document")
+    ap.add_argument("--paginate", type=int, default=0, metavar="N",
+                    help="split the HTML into pages of N turns (0 = single page). "
+                         "Page 1 keeps the summary, usage and fidelity sections; "
+                         "the sidebar contents link across pages")
     ap.add_argument("--subagents", choices=("on", "off"), default="on",
                     help="render subagent transcripts (<session>/subagents/agent-*.jsonl) "
                          "as appendix sections (default: on). With off, the files are "
@@ -3165,6 +3300,10 @@ def main() -> None:
                          "counts, but their content is not rendered")
     ap.add_argument("--index", action="store_true",
                     help="rebuild index.html for the archive directory and exit")
+    ap.add_argument("--watch", type=int, default=None, metavar="SECONDS",
+                    help="with --index: regenerate every SECONDS (min 30) until "
+                         "interrupted, and stamp the page to reload itself, so "
+                         "the activity column stays fresh")
     ap.add_argument("--import-claude-ai", metavar="CONVERSATIONS_JSON",
                     help="import conversations from a claude.ai data export "
                          "(conversations.json) instead of a local session")
@@ -3181,6 +3320,18 @@ def main() -> None:
     archive_dir = Path(args.archive_dir)
 
     if args.index:
+        if args.watch:
+            import time
+            period = max(30, args.watch)
+            print(f"watching: regenerating the index every {period}s (Ctrl+C to stop)")
+            try:
+                while True:
+                    build_index(archive_dir, projects_root, archive_dir / "index.html",
+                                sessions=scan_all_sessions(projects_root, cowork_root),
+                                refresh=period)
+                    time.sleep(period)
+            except KeyboardInterrupt:
+                return
         build_index(archive_dir, projects_root, archive_dir / "index.html",
                     sessions=scan_all_sessions(projects_root, cowork_root))
         return
@@ -3234,7 +3385,8 @@ def main() -> None:
                       follow_chain=False,
                       max_tool_output=0 if args.full else args.max_tool_output,
                       formats=formats, fragment=args.fragment,
-                      tool_output=args.tool_output, subagents=args.subagents)
+                      tool_output=args.tool_output, subagents=args.subagents,
+                      paginate=args.paginate)
         return
 
     if not args.session_id:
@@ -3266,7 +3418,7 @@ def main() -> None:
           max_tool_output=0 if args.full else args.max_tool_output,
           formats=formats, fragment=args.fragment,
           tool_output=args.tool_output, sessions=sessions,
-          subagents=args.subagents)
+          subagents=args.subagents, paginate=args.paginate)
 
 
 if __name__ == "__main__":

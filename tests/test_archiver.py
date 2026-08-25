@@ -633,6 +633,158 @@ try:
                   or "python -c" in md, "tool input missing")
         finally:
             shutil.rmtree(tmp7, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # The index gets an activity column: a session whose last record is
+        # recent shows as active, an old one does not, and the cell carries
+        # the raw timestamp so the page's own JS can let the state decay
+        # without regenerating. --index --watch N regenerates on a loop and
+        # stamps the page to reload itself.
+        print("\n[16] Index activity column, live decay, and watch mode")
+        tmp8 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test16-"))
+        try:
+            import datetime as _dt
+            root8 = tmp8 / "projects" / "proj"
+            root8.mkdir(parents=True)
+            NOW_SID = "22222222-3333-4444-8555-666666666666"
+            now_iso = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            recs = [{"type": "user", "sessionId": NOW_SID, "uuid": "n-1",
+                     "timestamp": now_iso, "promptSource": "typed",
+                     "origin": {"kind": "human"},
+                     "message": {"role": "user", "content": "still working"}}]
+            (root8 / f"{NOW_SID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+            # copy the (old-dated) sample beside it
+            shutil.copy(source_of(SAMPLE), root8 / f"{SAMPLE}.jsonl")
+            out8 = tmp8 / "arch"
+            out8.mkdir()
+            ta.build_index(out8, tmp8 / "projects", out8 / "index.html")
+            idx = (out8 / "index.html").read_text(encoding="utf-8",
+                                                  errors="replace")
+            def row_of(sid):
+                i = idx.find(sid[:8])
+                return idx[max(0, i - 400):i + 400]
+            check("recent session shows as active",
+                  'pill act' in row_of(NOW_SID), row_of(NOW_SID)[:200])
+            check("old session does not show as active",
+                  'pill act' not in row_of(SAMPLE), row_of(SAMPLE)[:200])
+            check("activity cells carry the raw timestamp for live decay",
+                  'data-ts="' in idx, "no data-ts attributes")
+            check("index JS updates activity ages client-side",
+                  "data-ts" in idx.split("<script>")[-1], "no updater in JS")
+            check("no auto-reload without --watch",
+                  "http-equiv" not in idx, "unexpected meta refresh")
+            ta.build_index(out8, tmp8 / "projects", out8 / "index.html",
+                           refresh=120)
+            idx2 = (out8 / "index.html").read_text(encoding="utf-8",
+                                                   errors="replace")
+            check("watch mode stamps the page to reload itself",
+                  'http-equiv="refresh" content="120"' in idx2, "no meta refresh")
+        finally:
+            shutil.rmtree(tmp8, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # Pagination: --paginate N splits the HTML into pages of N turns.
+        # Page 1 keeps the summary/usage/fidelity sections; every turn
+        # appears on exactly one page; the TOC and the subagent links say
+        # which page their target is on.
+        print("\n[17] --paginate splits the HTML without losing or doubling turns")
+        tmp9 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test17-"))
+        try:
+            p = run(SAMPLE, "html", tmp9, extra=("--paginate", "4"))
+            check("paginated export exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            pages9 = sorted(tmp9.glob("*.html"))
+            check("more than one page written", len(pages9) >= 2,
+                  str([f.name for f in pages9]))
+            bodies = {f.name: f.read_text(encoding="utf-8", errors="replace")
+                      for f in pages9}
+            all_html = "".join(bodies.values())
+            t9 = ta.parse_transcript(source_of(SAMPLE), 16384)
+            n_units = len(t9.turns)
+            # strip the per-page <script> blocks: the page JS contains the
+            # literal string data-lane= in a selector
+            markup_only = re.sub(r"(?s)<script.*?</script>", "", all_html)
+            got_units = markup_only.count('data-lane=')
+            # main turns + one subagent block (which nests its own turns)
+            at9 = ta.parse_transcript(
+                ROOT / SAMPLE / "subagents" / "agent-e000000000000001.jsonl", 16384)
+            want_units = n_units + 1 + len(at9.turns)
+            check("every turn appears exactly once across pages",
+                  got_units == want_units,
+                  f"got {got_units}, want {want_units}")
+            first = bodies[sorted(bodies)[0]]
+            check("page 1 keeps the fidelity report",
+                  "Fidelity report" in first, "fidelity not on page 1")
+            later = "".join(v for k, v in bodies.items()
+                            if k != sorted(bodies)[0])
+            check("later pages do not repeat the fidelity report",
+                  "Record disposition" not in later, "fidelity repeated")
+            check("pages link each other",
+                  "page-nav" in first and "page-nav" in later, "no nav")
+            # every internal href resolves somewhere in the union of pages
+            hrefs = set(re.findall(r'href="#([^"]+)"', all_html))
+            ids = set(re.findall(r'id="([^"]+)"', all_html))
+            dangling = hrefs - ids
+            check("no dangling same-page anchors", not dangling,
+                  str(sorted(dangling))[:200])
+            cross = re.findall(r'href="([^"#]+\.html)#([^"]+)"', all_html)
+            bad = [f"{f}#{a}" for f, a in cross
+                   if f not in bodies or f'id="{a}"' not in bodies[f]]
+            check("no dangling cross-page anchors", not bad, str(bad)[:200])
+            check("subagent link names the page that holds the transcript",
+                  any(a.startswith("subagent-") for _f, a in cross)
+                  or 'href="#subagent-' in all_html, "subagent link missing")
+        finally:
+            shutil.rmtree(tmp9, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # Structural validation of the single-page HTML: the page's own turn
+        # census must equal the parser's counts, tags must balance, and
+        # every same-page anchor must resolve.
+        print("\n[18] Single-page HTML validates structurally")
+        tmp10 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test18-"))
+        try:
+            p = run(SAMPLE, "html", tmp10)
+            check("export exits 0", p.returncode == 0, p.stderr.strip()[-300:])
+            page = next(iter(tmp10.glob("*.html"))).read_text(
+                encoding="utf-8", errors="replace")
+            t10 = ta.parse_transcript(source_of(SAMPLE), 16384)
+            census = {
+                "human-turn": page.count('class="turn human-turn"'),
+                "assistant-turn": page.count('class="turn assistant-turn"'),
+            }
+            at10 = ta.parse_transcript(
+                ROOT / SAMPLE / "subagents" / "agent-e000000000000001.jsonl",
+                16384)
+            check("page census matches parser: human turns",
+                  census["human-turn"]
+                  == t10.rendered_types.get("human turn", 0)
+                  + t10.rendered_types.get("pasted image", 0)
+                  + at10.rendered_types.get("human turn", 0),
+                  f"page={census['human-turn']} "
+                  f"parsed main={t10.rendered_types.get('human turn', 0)} "
+                  f"agent={at10.rendered_types.get('human turn', 0)}")
+            check("page census matches parser: assistant turns",
+                  census["assistant-turn"]
+                  == t10.rendered_types.get("assistant text", 0)
+                  + ta.parse_transcript(
+                      ROOT / SAMPLE / "subagents"
+                      / "agent-e000000000000001.jsonl", 16384
+                    ).rendered_types.get("assistant text", 0),
+                  str(census))
+            check("section tags balance",
+                  page.count("<section") == page.count("</section>"),
+                  f"{page.count('<section')} vs {page.count('</section>')}")
+            check("details tags balance",
+                  page.count("<details") == page.count("</details>"),
+                  f"{page.count('<details')} vs {page.count('</details>')}")
+            hrefs = {h for h in re.findall(r'href="#([^"]+)"', page)}
+            ids = set(re.findall(r'id="([^"]+)"', page))
+            check("every same-page anchor resolves", not (hrefs - ids),
+                  str(sorted(hrefs - ids))[:200])
+        finally:
+            shutil.rmtree(tmp10, ignore_errors=True)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:
