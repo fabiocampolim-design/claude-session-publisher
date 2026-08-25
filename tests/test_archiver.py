@@ -487,6 +487,117 @@ try:
                   f"agent-{AID}" in off, "file not disclosed")
         finally:
             shutil.rmtree(tmp4, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # Claude Desktop's cowork (local agent mode) writes the same session
+        # format under a different base directory:
+        #   <base>/<space>/<org>/local_<id>/.claude/projects/<proj>/<sid>.jsonl
+        # --cowork-root merges those sessions into discovery; audit.jsonl is
+        # bookkeeping, not a session, and must not be listed as one.
+        print("\n[13] Cowork sessions are discovered via --cowork-root")
+        tmp5 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test13-"))
+        try:
+            CW_SID = "11111111-2222-4333-8444-555555555555"
+            proj = (tmp5 / "cw" / "My Space" / "org-1" / "local_ab12"
+                    / ".claude" / "projects" / "some-project")
+            proj.mkdir(parents=True)
+            recs = [
+                {"type": "ai-title", "aiTitle": "Cowork test session",
+                 "sessionId": CW_SID},
+                {"type": "user", "sessionId": CW_SID, "uuid": "cw-u1",
+                 "timestamp": "2026-02-01T10:00:00Z", "promptSource": "typed",
+                 "origin": {"kind": "human"},
+                 "message": {"role": "user",
+                             "content": "COWORK-MARKER: summarize the notes"}},
+                {"type": "assistant", "sessionId": CW_SID, "uuid": "cw-a1",
+                 "timestamp": "2026-02-01T10:00:10Z", "requestId": "cw_r1",
+                 "message": {"role": "assistant", "model": "claude-opus-5",
+                             "content": [{"type": "text",
+                                          "text": "Here is the summary."}],
+                             "usage": {"input_tokens": 10, "output_tokens": 20}}},
+            ]
+            (proj / f"{CW_SID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+            (proj / "audit.jsonl").write_text(
+                '{"type": "audit", "event": "not a session"}\n', encoding="utf-8")
+            out5 = tmp5 / "out"
+            p = subprocess.run(
+                [sys.executable, str(SCRIPT), CW_SID, "--format", "html",
+                 "--archive-dir", str(out5), "--projects-root", str(ROOT),
+                 "--cowork-root", str(tmp5 / "cw")],
+                capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("cowork session archives via --cowork-root", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            pages = list(out5.glob("*.html")) if out5.exists() else []
+            body = pages[0].read_text(encoding="utf-8", errors="replace") if pages else ""
+            check("cowork content is rendered", "COWORK-MARKER" in body,
+                  "marker missing")
+            p = subprocess.run(
+                [sys.executable, str(SCRIPT), "--index",
+                 "--archive-dir", str(out5), "--projects-root", str(ROOT),
+                 "--cowork-root", str(tmp5 / "cw")],
+                capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("index build merges cowork sessions", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            idx = (out5 / "index.html").read_text(encoding="utf-8",
+                                                  errors="replace") \
+                if (out5 / "index.html").exists() else ""
+            check("index lists the cowork session", CW_SID[:8] in idx, "missing")
+            check("audit.jsonl is not listed as a session", "audit" not in idx,
+                  "audit leaked into the index")
+        finally:
+            shutil.rmtree(tmp5, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # claude.ai's data export ships a conversations.json in a different
+        # schema. --import-claude-ai converts each conversation into the
+        # record model and drives the normal pipeline, so every format and
+        # the fidelity report work unchanged.
+        print("\n[14] claude.ai exports import through the same pipeline")
+        CAI = HERE.parent / "examples" / "claude-ai-export-sample.json"
+        check("claude.ai sample export exists", CAI.exists(), str(CAI))
+        tmp6 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test14-"))
+        try:
+            p = subprocess.run(
+                [sys.executable, str(SCRIPT), "--import-claude-ai", str(CAI),
+                 "--list-conversations"],
+                capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("--list-conversations exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            check("listing names both conversations",
+                  "Band structure question" in p.stdout
+                  and "Grocery list" in p.stdout, p.stdout[-300:])
+            p = subprocess.run(
+                [sys.executable, str(SCRIPT), "--import-claude-ai", str(CAI),
+                 "--conversation", "band", "--format", "html,text",
+                 "--archive-dir", str(tmp6)],
+                capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("import of one conversation exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            pages = list(tmp6.glob("*.html"))
+            check("exactly the filtered conversation is archived",
+                  len(pages) == 1, str([f.name for f in pages]))
+            body = pages[0].read_text(encoding="utf-8", errors="replace") if pages else ""
+            check("imported human text is rendered", "CLAUDE-AI-MARKER" in body,
+                  "marker missing")
+            check("human turn stays verbatim (not markdown-rendered)",
+                  "E(eV)" in body and "<hr>" not in body.split("CLAUDE-AI-MARKER")[-1][:400],
+                  "pasted columns were reinterpreted")
+            check("assistant markdown is rendered",
+                  "<strong>equivalent</strong>" in body, "markdown not rendered")
+            check("attachment content travels", "lattice constant a = 2.46" in body,
+                  "attachment extracted_content missing")
+            check("provenance is stated on the page",
+                  "claude.ai" in body, "no provenance note")
+            check("fidelity report present in an import",
+                  fidelity_numbers(re.sub(r"<[^>]+>", " ", body)) is not None,
+                  "no fidelity numbers")
+            txt = next(iter(tmp6.glob("*.txt")), None)
+            txt = txt.read_text(encoding="utf-8", errors="replace") if txt else ""
+            check("text format works for imports", "CLAUDE-AI-MARKER" in txt,
+                  "marker missing from .txt")
+        finally:
+            shutil.rmtree(tmp6, ignore_errors=True)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:

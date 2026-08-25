@@ -1,0 +1,80 @@
+[
+  {
+    "uuid": "aaaa1111-bbbb-4ccc-8ddd-eeee22223333",
+    "name": "Band structure question",
+    "created_at": "2026-03-01T14:00:00Z",
+    "updated_at": "2026-03-01T14:20:00Z",
+    "chat_messages": [
+      {
+        "uuid": "m-0001",
+        "sender": "human",
+        "created_at": "2026-03-01T14:00:05Z",
+        "text": "CLAUDE-AI-MARKER: why does the gap close at K?\n\n  n   E(eV)\n  1   -0.4\n  2    0.4",
+        "content": [
+          {"type": "text", "text": "CLAUDE-AI-MARKER: why does the gap close at K?\n\n  n   E(eV)\n  1   -0.4\n  2    0.4"}
+        ],
+        "attachments": [
+          {"file_name": "notes.txt", "file_type": "text/plain", "file_size": 120,
+           "extracted_content": "lattice constant a = 2.46 angstrom"}
+        ],
+        "files": []
+      },
+      {
+        "uuid": "m-0002",
+        "sender": "assistant",
+        "created_at": "2026-03-01T14:00:30Z",
+        "text": "The gap closes at K because the two sublattices are equivalent there.",
+        "content": [
+          {"type": "thinking", "thinking": "Symmetry argument: C3 plus inversion."},
+          {"type": "text", "text": "The gap closes at K because the two sublattices are **equivalent** there:\n\n- graphene-like symmetry\n- no mass term"}
+        ],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "m-0003",
+        "sender": "human",
+        "created_at": "2026-03-01T14:05:00Z",
+        "text": "thanks, and with a mass term?",
+        "content": [{"type": "text", "text": "thanks, and with a mass term?"}],
+        "attachments": [],
+        "files": [{"file_name": "sketch.png"}]
+      },
+      {
+        "uuid": "m-0004",
+        "sender": "assistant",
+        "created_at": "2026-03-01T14:05:20Z",
+        "text": "Then the gap opens linearly in the mass.",
+        "content": [{"type": "text", "text": "Then the gap opens linearly in the mass."}],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  },
+  {
+    "uuid": "ffff4444-aaaa-4bbb-8ccc-dddd55556666",
+    "name": "Grocery list",
+    "created_at": "2026-03-02T09:00:00Z",
+    "updated_at": "2026-03-02T09:01:00Z",
+    "chat_messages": [
+      {
+        "uuid": "m-1001",
+        "sender": "human",
+        "created_at": "2026-03-02T09:00:10Z",
+        "text": "make me a short grocery list",
+        "content": [{"type": "text", "text": "make me a short grocery list"}],
+        "attachments": [],
+        "files": []
+      },
+      {
+        "uuid": "m-1002",
+        "sender": "assistant",
+        "created_at": "2026-03-02T09:00:30Z",
+        "text": "- eggs\n- bread\n- coffee",
+        "content": [{"type": "text", "text": "- eggs\n- bread\n- coffee"}],
+        "attachments": [],
+        "files": []
+      }
+    ]
+  }
+]

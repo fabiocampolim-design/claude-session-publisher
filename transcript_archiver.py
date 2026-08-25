@@ -58,6 +58,7 @@ import argparse
 import datetime
 import html
 import json
+import os
 import re
 import sys
 import subprocess
@@ -544,13 +545,15 @@ def classify_user_string(rec: dict, text: str, scheduled_prompts: set[str]) -> t
 # ---------------------------------------------------------------------------
 
 class SessionFile:
-    __slots__ = ("sid", "path", "uuids", "first", "last", "records", "title", "subagents")
+    __slots__ = ("sid", "path", "uuids", "first", "last", "records", "title",
+                 "subagents", "source")
 
     def __init__(self, sid, path, uuids, first, last, records, title):
         self.sid, self.path = sid, path
         self.uuids, self.first, self.last = uuids, first, last
         self.records, self.title = records, title
         self.subagents = 0          # subagent transcripts filed under this session
+        self.source = "claude-code"  # or "cowork" (Claude Desktop local agent)
 
 
 def scan_sessions(root: Path) -> dict[str, SessionFile]:
@@ -564,6 +567,8 @@ def scan_sessions(root: Path) -> dict[str, SessionFile]:
     found: dict[str, SessionFile] = {}
     subagents: Counter = Counter()
     for path in sorted(root.glob("**/*.jsonl")):
+        if path.name == "audit.jsonl":     # cowork bookkeeping, not a session
+            continue
         if "subagents" in path.parts:
             i = path.parts.index("subagents")
             if i:
@@ -601,6 +606,37 @@ def scan_sessions(root: Path) -> dict[str, SessionFile]:
         if sid in found:
             found[sid].subagents = n
     return found
+
+
+def default_cowork_root() -> Path:
+    """Where Claude Desktop's cowork (local agent mode) keeps its sessions.
+
+    Same record schema, same <...>/.claude/projects/<proj>/<sid>.jsonl layout,
+    different base directory per platform."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        return base / "Claude" / "local-agent-mode-sessions"
+    if sys.platform == "darwin":
+        return (Path.home() / "Library" / "Application Support" / "Claude"
+                / "local-agent-mode-sessions")
+    return Path.home() / ".config" / "Claude" / "local-agent-mode-sessions"
+
+
+def scan_all_sessions(projects_root: Path, cowork_root: Path | None) -> dict[str, SessionFile]:
+    """Claude Code sessions, plus cowork sessions when that root exists.
+
+    Session ids are uuids, so a cross-source collision is not expected; if one
+    ever happens the Claude Code file wins and the clash is reported."""
+    sessions = scan_sessions(projects_root)
+    if cowork_root and cowork_root.is_dir():
+        for sid, info in scan_sessions(cowork_root).items():
+            info.source = "cowork"
+            if sid in sessions:
+                print(f"note: session {sid} exists in both {projects_root} and "
+                      f"{cowork_root}; using the Claude Code copy", file=sys.stderr)
+                continue
+            sessions[sid] = info
+    return sessions
 
 
 def resolve_chain(sid: str, sessions: dict[str, SessionFile]) -> tuple[str, list[dict]]:
@@ -2385,11 +2421,119 @@ def compile_pdf(tex_path):
 
 
 # ---------------------------------------------------------------------------
+# claude.ai import
+#
+# claude.ai's data export (Settings -> Privacy -> Export data) ships a
+# conversations.json in its own schema: a list of conversations, each with
+# chat_messages carrying sender/text/content/attachments. The adapter converts
+# one conversation into this tool's record model and lets the normal pipeline
+# do everything else -- discovery, fidelity, all four formats -- unchanged.
+# The export carries no usage data and no model name; the page says so.
+# ---------------------------------------------------------------------------
+
+CLAUDE_AI_MODEL = "claude.ai (model not in export)"
+
+
+def claude_ai_records(conv: dict) -> list[dict]:
+    sid = conv.get("uuid") or "claude-ai-import"
+    name = conv.get("name") or sid
+    msgs = conv.get("chat_messages") or []
+    recs: list[dict] = [
+        {"type": "ai-title", "aiTitle": name, "sessionId": sid},
+        {"type": "attachment", "sessionId": sid, "uuid": f"{sid}-import-note",
+         "timestamp": conv.get("created_at"),
+         "attachment": {"type": "hook_system_message",
+                        "hookName": "claude.ai import",
+                        "content": (f"Imported from a claude.ai data export "
+                                    f"(conversations.json): conversation "
+                                    f"“{name}”, {len(msgs)} messages. "
+                                    "The export records no token usage and no "
+                                    "model name.")}},
+    ]
+    for i, msg in enumerate(msgs):
+        if not isinstance(msg, dict):
+            continue
+        base = {"sessionId": sid, "uuid": msg.get("uuid") or f"{sid}-msg-{i}",
+                "timestamp": msg.get("created_at") or conv.get("created_at"),
+                "version": "claude.ai export"}
+        text = msg.get("text") or ""
+        content = msg.get("content")
+        blocks = [b for b in content if isinstance(b, dict)] \
+            if isinstance(content, list) else []
+
+        if msg.get("sender") == "human":
+            htext = text or "\n\n".join(
+                b.get("text", "") for b in blocks if b.get("type") == "text")
+            if htext.strip():
+                recs.append({**base, "type": "user", "promptSource": "typed",
+                             "origin": {"kind": "human"},
+                             "message": {"role": "user", "content": htext}})
+            for j, att in enumerate(msg.get("attachments") or []):
+                if not isinstance(att, dict):
+                    continue
+                recs.append({**base, "uuid": f"{base['uuid']}-att-{j}",
+                             "type": "attachment",
+                             "attachment": {"type": "file",
+                                            "filename": att.get("file_name", ""),
+                                            "content": att.get("extracted_content")
+                                            or f"({att.get('file_type', 'file')}; "
+                                               "content not included in the export)"}})
+            for j, f_ in enumerate(msg.get("files") or []):
+                if not isinstance(f_, dict):
+                    continue
+                recs.append({**base, "uuid": f"{base['uuid']}-file-{j}",
+                             "type": "attachment",
+                             "attachment": {"type": "file",
+                                            "filename": f_.get("file_name", ""),
+                                            "content": "(binary file; content not "
+                                                       "included in claude.ai exports)"}})
+            continue
+
+        # Assistant. tool_result blocks belong to user records in the Claude
+        # Code model, so split the stream there and the tool call still folds.
+        if not blocks and text:
+            blocks = [{"type": "text", "text": text}]
+        pending: list[dict] = []
+        part = 0
+
+        def flush(kind_blocks, rtype):
+            nonlocal part
+            if not kind_blocks:
+                return
+            rec = {**base, "uuid": f"{base['uuid']}-p{part}" if part else base["uuid"],
+                   "type": rtype,
+                   "message": ({"role": "assistant", "model": CLAUDE_AI_MODEL,
+                                "content": list(kind_blocks)} if rtype == "assistant"
+                               else {"role": "user", "content": list(kind_blocks)})}
+            recs.append(rec)
+            part += 1
+
+        for b in blocks:
+            if b.get("type") == "tool_result":
+                flush(pending, "assistant")
+                pending = []
+                flush([b], "user")
+            else:
+                pending.append(b)
+        flush(pending, "assistant")
+    return recs
+
+
+def load_claude_ai_export(path: Path) -> list[dict]:
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    if isinstance(data, dict):
+        data = data.get("conversations") or [data]
+    return [c for c in data if isinstance(c, dict) and c.get("chat_messages") is not None]
+
+
+# ---------------------------------------------------------------------------
 # Index mode
 # ---------------------------------------------------------------------------
 
-def build_index(archive_dir: Path, projects_root: Path, out_path: Path) -> None:
-    sessions = scan_sessions(projects_root)
+def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
+                sessions: dict | None = None) -> None:
+    if sessions is None:
+        sessions = scan_sessions(projects_root)
     archived: dict[str, dict] = {}
     for f in sorted(archive_dir.glob("*.html")):
         if f.name == out_path.name:
@@ -2479,6 +2623,8 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path) -> None:
             detail = f"{info.records:,} records on disk"
             if info.subagents:
                 detail += f" &middot; {info.subagents} subagent transcript(s)"
+        if info.source != "claude-code":
+            detail += f" &middot; source: {esc(info.source)}"
         status_key = re.sub(r"<[^>]+>", "", status).strip()
         title_key = re.sub(r"<[^>]+>", "", link).strip().lower()
         rows.append(
@@ -2911,6 +3057,10 @@ def main() -> None:
     ap.add_argument("--summary-file", default=None,
                     help="HTML fragment (h3/ul blocks) rendered as the session summary")
     ap.add_argument("--projects-root", default=str(Path.home() / ".claude" / "projects"))
+    ap.add_argument("--cowork-root", default=str(default_cowork_root()),
+                    help="base directory of Claude Desktop cowork (local agent mode) "
+                         "sessions, merged into discovery when it exists; pass an "
+                         "empty string to disable")
     ap.add_argument("--archive-dir", default=str(Path.home() / "Desktop" / "CLAUDE_CONVERSATIONS"))
     ap.add_argument("--no-follow-chain", action="store_true",
                     help="archive exactly the id given, even if a more complete continuation exists")
@@ -2934,19 +3084,80 @@ def main() -> None:
                          "counts, but their content is not rendered")
     ap.add_argument("--index", action="store_true",
                     help="rebuild index.html for the archive directory and exit")
+    ap.add_argument("--import-claude-ai", metavar="CONVERSATIONS_JSON",
+                    help="import conversations from a claude.ai data export "
+                         "(conversations.json) instead of a local session")
+    ap.add_argument("--conversation", default=None,
+                    help="with --import-claude-ai: only conversations whose name or "
+                         "uuid contains this (case-insensitive)")
+    ap.add_argument("--list-conversations", action="store_true",
+                    help="with --import-claude-ai: list the export's conversations "
+                         "and exit")
     args = ap.parse_args()
 
     projects_root = Path(args.projects_root)
+    cowork_root = Path(args.cowork_root) if args.cowork_root else None
     archive_dir = Path(args.archive_dir)
 
     if args.index:
-        build_index(archive_dir, projects_root, archive_dir / "index.html")
+        build_index(archive_dir, projects_root, archive_dir / "index.html",
+                    sessions=scan_all_sessions(projects_root, cowork_root))
+        return
+
+    formats = tuple(f.strip().lower() for f in args.format.split(",") if f.strip())
+    unknown = [f for f in formats if f not in ("html", "text", "latex", "pdf")]
+    if unknown:
+        ap.error(f"unknown --format value(s): {', '.join(unknown)} "
+                 "(choose from html, text, latex, pdf)")
+
+    if args.import_claude_ai:
+        convs = load_claude_ai_export(Path(args.import_claude_ai))
+        if args.conversation:
+            q = args.conversation.lower()
+            convs = [c for c in convs
+                     if q in (c.get("name") or "").lower()
+                     or q in (c.get("uuid") or "").lower()]
+        if args.list_conversations or not convs:
+            if not convs:
+                print("no conversation matches; the export contains:")
+            for c in load_claude_ai_export(Path(args.import_claude_ai)):
+                print(f"  {(c.get('uuid') or '?')[:8]}  "
+                      f"{(c.get('created_at') or '')[:10]}  "
+                      f"{len(c.get('chat_messages') or []):4d} msgs  "
+                      f"{c.get('name') or '(untitled)'}")
+            if not args.list_conversations and not convs:
+                sys.exit(1)
+            return
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix="claude-ai-import-") as td:
+            troot = Path(td)
+            for c in convs:
+                sid = c.get("uuid") or "claude-ai-import"
+                recs = claude_ai_records(c)
+                (troot / f"{sid}.jsonl").write_text(
+                    "\n".join(json.dumps(r, ensure_ascii=False) for r in recs) + "\n",
+                    encoding="utf-8")
+            summary_inner = (Path(args.summary_file).read_text(encoding="utf-8")
+                             if args.summary_file else
+                             "<p><em>Imported from a claude.ai data export. Pass "
+                             "<code>--summary-file</code> for a hand-written "
+                             "summary.</em></p>")
+            for c in convs:
+                sid = c.get("uuid") or "claude-ai-import"
+                title = args.title or c.get("name") or sid
+                out = (Path(args.out) if args.out and len(convs) == 1 else
+                       archive_dir / f"{sid[:8]}_{slugify(title)}.html")
+                build(sid, title, out, summary_inner, troot,
+                      follow_chain=False,
+                      max_tool_output=0 if args.full else args.max_tool_output,
+                      formats=formats, fragment=args.fragment,
+                      tool_output=args.tool_output, subagents=args.subagents)
         return
 
     if not args.session_id:
-        ap.error("a session id is required (or use --index)")
+        ap.error("a session id is required (or use --index or --import-claude-ai)")
 
-    sessions = scan_sessions(projects_root)
+    sessions = scan_all_sessions(projects_root, cowork_root)
     if args.session_id not in sessions:
         sys.exit(f"No {args.session_id}.jsonl under {projects_root}")
     title = args.title or sessions[args.session_id].title or args.session_id
@@ -2967,11 +3178,6 @@ def main() -> None:
     out_path = Path(args.out) if args.out else (
         archive_dir / f"{naming_id}_{slugify(title)}.html")
 
-    formats = tuple(f.strip().lower() for f in args.format.split(",") if f.strip())
-    unknown = [f for f in formats if f not in ("html", "text", "latex", "pdf")]
-    if unknown:
-        ap.error(f"unknown --format value(s): {', '.join(unknown)} "
-                 "(choose from html, text, latex, pdf)")
     build(args.session_id, title, out_path, summary_inner, projects_root,
           follow_chain=not args.no_follow_chain,
           max_tool_output=0 if args.full else args.max_tool_output,
