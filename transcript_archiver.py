@@ -319,8 +319,16 @@ def md_to_html(text: str) -> str:
             tbl.append("</tbody></table></div>")
             out.append("".join(tbl))
         elif tok[0] == "list":
-            listing, _ = _render_list(tok[1], 0)
-            out.append(listing)
+            # _render_list stops at a marker-type switch or a dedent below its
+            # starting indent; loop until every item is consumed, or a list
+            # that switches from bullets to numbers loses its tail.
+            items, i = tok[1], 0
+            parts = []
+            while i < len(items):
+                listing, j = _render_list(items, i)
+                parts.append(listing)
+                i = j if j > i else i + 1
+            out.append("".join(parts))
         elif tok[0] == "quote":
             out.append("<blockquote>" + inline_md(tok[1]) + "</blockquote>")
     return "\n".join(out)
@@ -632,7 +640,10 @@ def resolve_chain(sid: str, sessions: dict[str, SessionFile]) -> tuple[str, list
             "session_id": other, "shared": shared, "records": info.records,
             "own_uuids": len(info.uuids), "relation": rel, "dropped": dropped,
         })
-        if len(info.uuids) > len(sessions[best].uuids):
+        # Only a superset is the same conversation continued. A fork shares
+        # history but then diverges: archiving it in place of the requested id
+        # would silently swap in a different conversation, however large.
+        if rel == "superset" and len(info.uuids) > len(sessions[best].uuids):
             best = other
     related.sort(key=lambda r: -r["own_uuids"])
     return best, related
@@ -685,7 +696,13 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                 try:
                     objs.append(json.loads(line))
                 except json.JSONDecodeError:
-                    t.counts["unparseable_lines"] += 1
+                    # A line the parser cannot even read is still a line of the
+                    # source. It enters the record count and the disposition so
+                    # the fidelity report shows it -- "no silent drops" must
+                    # cover corruption, not just record classes.
+                    t.record_types["(unparseable line)"] += 1
+                    t.counted_only["unparseable line (invalid JSON)"] += 1
+                    t.disposition["counted"] += 1
 
     # Pass 1: collect ScheduleWakeup prompts so a firing wakeup can be
     # recognised later even on records with no promptSource field.
@@ -1193,7 +1210,10 @@ def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime) 
     ends = sorted(parse_ts(x) for x in t.timestamps)
     last_record = ends[-1] if ends else None
     live = bool(last_record) and (archived_at - last_record).total_seconds() < 600
-    if live:
+    if last_record is None:
+        warn.append("No record in the source carries a timestamp, so when the conversation "
+                    "happened cannot be established from this file.")
+    elif live:
         warn.append("This archive was written while the session was still active, so records "
                     f"created after {esc(fmt_local(archived_at))} are not in it. Re-run to refresh.")
     else:
@@ -1370,8 +1390,11 @@ def render_turns(t: Transcript) -> tuple[str, list[tuple[str, str, str]]]:
 def build(session_id: str, title: str, out_path: Path, summary_inner: str,
           projects_root: Path, follow_chain: bool, max_tool_output: int,
           formats: tuple = ("html",), fragment: bool = False,
-          tool_output: str = "on") -> dict:
-    sessions = scan_sessions(projects_root)
+          tool_output: str = "on", sessions: dict | None = None) -> dict:
+    # scan_sessions reads every .jsonl under the root; the caller usually has
+    # the scan already, so reuse it rather than reading them all a second time.
+    if sessions is None:
+        sessions = scan_sessions(projects_root)
     if session_id not in sessions:
         sys.exit(f"No {session_id}.jsonl under {projects_root}")
 
@@ -1484,7 +1507,12 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                 f"{t.rendered_types.get('tool call', 0)} tool calls · "
                 f"${usage_totals['cost']:,.2f} at list price")
 
-    page = finish_page(_TEMPLATE.format(
+    # CSS and JS ride in as .format *values*: format never scans values for
+    # braces or fields, so neither their own braces nor any placeholder-looking
+    # text inside the transcript body can trigger a second substitution.
+    # "</" is escaped in the embedded JSON ("<\/" is valid JSON) so a title
+    # containing "</script>" cannot terminate the metadata block early.
+    page = _TEMPLATE.format(
         title=esc(title),
         session_info=session_info,
         usage_html=usage_html,
@@ -1493,9 +1521,11 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         summary_html=summary_inner,
         fidelity_html=fidelity_section(t, path, archived_at),
         body_html=body_html,
-        meta_json=json.dumps(meta, ensure_ascii=False),
+        meta_json=json.dumps(meta, ensure_ascii=False).replace("</", "<\\/"),
         subtitle=esc(subtitle),
-    ))
+        css=_CSS,
+        js=_JS,
+    )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     written = []
@@ -1833,13 +1863,19 @@ def md_to_tex(text: str, tally, neutral: bool = False) -> str:
                 out.append(" & ".join(inl(c) for c in cells) + " \\\\\n")
             out.append("\\bottomrule\n\\end{tabular}\n\n")
         elif tok[0] == "list":
-            items = tok[1]
-            ordered = items[0][1] if items else False
-            env = "enumerate" if ordered else "itemize"
-            out.append("\\begin{" + env + "}[leftmargin=*,itemsep=1pt]\n")
-            for _, _, txt in items:
-                out.append("  \\item " + inl(txt) + "\n")
-            out.append("\\end{" + env + "}\n")
+            # Group consecutive items by marker type so a list that switches
+            # from bullets to numbers gets enumerate for the numbered run
+            # instead of one flattened itemize. (Nesting stays flat here; the
+            # HTML keeps the hierarchy.)
+            items, j = tok[1], 0
+            while j < len(items):
+                ordered = items[j][1]
+                env = "enumerate" if ordered else "itemize"
+                out.append("\\begin{" + env + "}[leftmargin=*,itemsep=1pt]\n")
+                while j < len(items) and items[j][1] == ordered:
+                    out.append("  \\item " + inl(items[j][2]) + "\n")
+                    j += 1
+                out.append("\\end{" + env + "}\n")
         elif tok[0] == "quote":
             out.append("\\begin{quote}\n" + inl(tok[1]) + "\n\\end{quote}\n")
     return "".join(out)
@@ -2112,7 +2148,12 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False):
     B.append("\\bottomrule\n\\end{tabular}\n\n")
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
     B.append(inl(_format_note(tool_output, n_tools)) + "\n\n")
-    B.append("__DROPNOTE__")
+    # The drop-note's numbers are only known once the whole body is rendered,
+    # so reserve a slot and assign it afterwards. Filling it by string
+    # replacement over the finished source once clobbered a transcript that
+    # itself contained the placeholder text.
+    B.append("")
+    dropnote_slot = len(B) - 1
     B.append("\\section*{Transcript}\n\\addcontentsline{toc}{section}{Transcript}\n")
     def box(env, title, inner):
         return ("\\begin{" + env + "}{" + title + "}\n" + inner
@@ -2153,7 +2194,6 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False):
                          verb((turn.get("text") or "").rstrip())))
     if not fragment:
         B.append("\\end{document}\n")
-    src = "".join(B)
     removed = []
     if tally["glyphs"]:
         removed.append(format(tally["glyphs"], ",") + " characters (emoji and other glyphs "
@@ -2174,10 +2214,8 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False):
                      "at " + str(_TEX_HARD_WRAP) + " characters so TeX could typeset them.")
     if notes:
         notes.append("The HTML archive holds all of it unaltered.")
-        src = src.replace("__DROPNOTE__", inl(" ".join(notes)) + "\n\n")
-    else:
-        src = src.replace("__DROPNOTE__", "")
-    return src, tally
+        B[dropnote_slot] = inl(" ".join(notes)) + "\n\n"
+    return "".join(B), tally
 
 
 def compile_pdf(tex_path):
@@ -2279,9 +2317,14 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path) -> None:
                 detail = ('written by the v1 archiver &mdash; no embedded metadata, and its counts '
                           'and token figures are known to be wrong. Re-run to replace it.')
             else:
-                detail = (f'{meta.get("records", "?"):,} records &middot; '
-                          f'{meta.get("tool_calls", 0):,} tool calls &middot; '
-                          f'${meta.get("list_cost_usd", 0):,.2f} at list price &middot; '
+                # Metadata is read back from files on disk, so a field may be
+                # absent or hand-edited; never let one entry abort the index.
+                def _n(key, spec=","):
+                    v = meta.get(key)
+                    return format(v, spec) if isinstance(v, (int, float)) else "?"
+                detail = (f'{_n("records")} records &middot; '
+                          f'{_n("tool_calls")} tool calls &middot; '
+                          f'${_n("list_cost_usd", ",.2f")} at list price &middot; '
                           f'{meta["size_mb"]:.1f} MB &middot; archiver v{meta.get("archiver_version")}')
         elif covered_by:
             status = '<span class="pill covered">covered</span>'
@@ -2312,12 +2355,15 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path) -> None:
             counts["archived"] += 1
         else:
             counts["missing"] += 1
-    page = finish_page(_INDEX_TEMPLATE.format(
+    page = _INDEX_TEMPLATE.format(
         rows="".join(rows),
         summary=(f"{len(sessions)} sessions on disk &middot; {counts['archived']} archived &middot; "
                  f"{counts['missing']} not archived directly"),
         generated=esc(fmt_local(datetime.datetime.now(datetime.timezone.utc))),
-    ), index=True)
+        css=_CSS,
+        index_css=_INDEX_CSS,
+        index_js=_INDEX_JS,
+    )
     out_path.write_text(page, encoding="utf-8")
     print(f"wrote {out_path} ({len(sessions)} sessions, {counts['archived']} archived)")
 
@@ -2576,7 +2622,7 @@ _TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <title>{title} — Session Transcript</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>__CSS__</style>
+<style>{css}</style>
 </head>
 <body>
 <script type="application/json" id="archive-meta">{meta_json}</script>
@@ -2621,7 +2667,7 @@ _TEMPLATE = """<!doctype html>
     {body_html}
   </main>
 </div>
-<script>__JS__</script>
+<script>{js}</script>
 </body>
 </html>
 """
@@ -2632,8 +2678,8 @@ _INDEX_TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <title>Claude Code session archive</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>__CSS__
-__INDEX_CSS__
+<style>{css}
+{index_css}
 </style>
 </head>
 <body>
@@ -2652,7 +2698,7 @@ __INDEX_CSS__
 <tbody>{rows}</tbody>
 </table></div>
 </main></div>
-<script>__INDEX_JS__</script>
+<script>{index_js}</script>
 </body>
 </html>
 """
@@ -2696,13 +2742,6 @@ th.sortable::after{content:"\\2195";opacity:.25;margin-left:.4em;font-size:.85em
 th.sorted-asc::after{content:"\\2191";opacity:.8}
 th.sorted-desc::after{content:"\\2193";opacity:.8}
 """
-
-
-def finish_page(rendered: str, index: bool = False) -> str:
-    """Substitute the CSS/JS blobs after .format() so their braces are safe."""
-    out = rendered.replace("__CSS__", _CSS).replace("__JS__", _JS)
-    out = out.replace("__INDEX_CSS__", _INDEX_CSS if index else "")
-    return out.replace("__INDEX_JS__", _INDEX_JS if index else "")
 
 
 # ---------------------------------------------------------------------------
@@ -2782,7 +2821,7 @@ def main() -> None:
           follow_chain=not args.no_follow_chain,
           max_tool_output=0 if args.full else args.max_tool_output,
           formats=formats, fragment=args.fragment,
-          tool_output=args.tool_output)
+          tool_output=args.tool_output, sessions=sessions)
 
 
 if __name__ == "__main__":

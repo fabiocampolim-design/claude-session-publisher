@@ -13,6 +13,12 @@ data during development:
   * a 3,000-character single line (the hard-wrap path)
   * an empty thinking block, as Claude Code always emits
   * a system record and an unresolved tool call
+  * a markdown list that switches marker type mid-stream (- a / 1. b)
+  * a human turn containing the literal template placeholders __CSS__,
+    __JS__ and __DROPNOTE__ (a session about the archiver itself would)
+  * an attachment record in the real schema ({"attachment": {"type": ...}})
+  * one deliberately corrupt (non-JSON) line, which the fidelity report
+    must count rather than silently skip
 
 Run:  python examples/make_sample.py
 """
@@ -95,6 +101,11 @@ assistant(2, [
         "import numpy as np\n"
         "bands = np.linalg.eigvalsh(H)\n"
         "```\n\n"
+        "Steps, then caveats -- a list that switches marker type mid-stream:\n\n"
+        "1. compute the mesh\n"
+        "2. plot the bands\n"
+        "- avoid the K points\n"
+        "- check the gap\n\n"
         "The arrow → and box drawing ─│┌ appear in tool output below.")},
     {"type": "tool_use", "id": "tool_1", "name": "Write",
      "input": {"file_path": "/home/example/project/bands.py",
@@ -146,14 +157,39 @@ assistant(9, [
 ], "req_4")
 # tool_4 is deliberately left without a result: an interrupted call
 
-# a system record and a harness attachment
-add({**BASE, "type": "system", "subtype": "turn_duration", "uuid": uid(10),
-     "timestamp": ts(), "durationMs": 41000, "content": "turn complete"})
-add({**BASE, "type": "attachment", "uuid": uid(11), "timestamp": ts(),
-     "attachmentType": "hook_success", "content": "SessionStart hook ran"})
-add({"type": "mode", "sessionId": SESSION, "mode": "default"})
-add({"type": "last-prompt", "sessionId": SESSION, "leafUuid": uid(4)})
+# 4 -- a human turn quoting the archiver's own template placeholders. These
+# literals appear in any session spent working on this script; substitution
+# must never touch them.
+human(10, "one more thing: will the literal placeholders __CSS__, __JS__ and "
+          "__DROPNOTE__ survive archiving, or does template substitution "
+          "clobber them?")
+assistant(11, [
+    {"type": "text", "text": "They survive: substitution fills template slots, "
+                             "it never scans transcript content."},
+], "req_5")
 
-OUT.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n",
-               encoding="utf-8")
-print(f"wrote {OUT} ({len(records)} records)")
+# a system record and a harness attachment (the real schema nests the payload
+# under an "attachment" key -- see any transcript under ~/.claude/projects)
+add({**BASE, "type": "system", "subtype": "turn_duration", "uuid": uid(12),
+     "timestamp": ts(), "durationMs": 41000, "content": "turn complete"})
+add({**BASE, "type": "attachment", "uuid": uid(13), "timestamp": ts(),
+     "attachment": {"type": "hook_success", "hookName": "SessionStart",
+                    "exitCode": 0, "stdout": "SessionStart hook ran"}})
+add({"type": "mode", "sessionId": SESSION, "mode": "default"})
+# Real last-prompt records carry the typed text; the archiver cross-checks
+# them against the human turns it rendered.
+for i, (leaf, text) in enumerate((
+        (1, "Can you check the lattice constant and plot the band structure?"),
+        (4, "here is what it printed, the columns must line up:"),
+        (10, "one more thing: will the literal placeholders __CSS__, __JS__ and "
+             "__DROPNOTE__ survive archiving, or does template substitution "
+             "clobber them?"))):
+    add({"type": "last-prompt", "sessionId": SESSION, "leafUuid": uid(leaf),
+         "lastPrompt": text})
+
+lines = [json.dumps(r, ensure_ascii=False) for r in records]
+# One deliberately corrupt line: a transcript truncated mid-write looks like
+# this, and the fidelity report must count it, not silently skip it.
+lines.append('{"type": "user", "uuid": "trunc — this line is deliberately not JSON')
+OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(f"wrote {OUT} ({len(records)} records + 1 corrupt line)")
