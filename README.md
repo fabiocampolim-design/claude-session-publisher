@@ -62,7 +62,13 @@ python transcript_archiver.py --index          # rebuild the index page
   point and says plainly that the text never reaches the transcript.
 - **Self-contained HTML** — chat-style layout, light and dark themes,
   filterable table of contents, per-lane toggles, keyboard navigation, no
-  external assets; plus an index page covering every session on disk.
+  external assets. `--paginate N` splits a very large session into pages of N
+  turns, with the sidebar contents and subagent links pointing across pages.
+- **A live index** — `--index` builds a sortable page of every session on
+  disk with an activity column whose ages decay in the browser without
+  regeneration; `--index --watch 300` keeps regenerating it on a loop and the
+  page reloads itself, giving a slow-paced dashboard of which conversations
+  are active right now.
 - **Tool I/O under your control** — `--tool-output on|off` independent of
   format, and long outputs elided in the middle (`--full` to keep everything),
   with every elision counted on the page.
@@ -87,13 +93,13 @@ document, use this one.
 
 ## Roadmap
 
-Remaining gaps worth closing: pagination for very large sessions, and
-client-side search across an archive. (Subagent rendering, the Markdown
-format, cowork discovery and the claude.ai importer, formerly listed here,
-shipped.) Two caveats on the new sources: the cowork directory layout follows
-Claude Desktop's documented structure but was tested against synthetic data,
-and the claude.ai importer targets the export schema as of mid-2026 — reports
-with real exports that parse differently are welcome.
+Remaining gap worth closing: client-side search across a whole archive.
+(Subagent rendering, the Markdown format, cowork discovery, the claude.ai
+importer, and pagination, formerly listed here, shipped.) Two caveats on the
+sources: the cowork directory layout follows Claude Desktop's documented
+structure but was tested against synthetic data, and the claude.ai importer
+targets the export schema as of mid-2026 — reports with real exports that
+parse differently are welcome.
 
 ## Scope
 
