@@ -22,11 +22,21 @@ python transcript_archiver.py --index          # rebuild the index page
 
 ## Features
 
-- **Four formats from one parse** — HTML, plain text, LaTeX and PDF all render
-  from the same typed transcript model, so a turn cannot appear in one format
-  and vanish from another. `--fragment` emits a LaTeX body ready to `\input`
-  into a manuscript, transliterated to compile under pdflatex as well as
-  XeLaTeX.
+- **Five formats from one parse** — HTML, plain text, Markdown, LaTeX and PDF
+  all render from the same typed transcript model, so a turn cannot appear in
+  one format and vanish from another. `--fragment` emits a LaTeX body ready to
+  `\input` into a manuscript, transliterated to compile under pdflatex as well
+  as XeLaTeX.
+- **Subagent transcripts are part of the record** — a background agent's
+  conversation (`<session-id>/subagents/agent-*.jsonl`) is rendered as a
+  linked appendix in every format, its usage merged into the cost table, and
+  each file listed in the fidelity report. `--subagents off` suppresses the
+  content but never the disclosure.
+- **Three sources** — Claude Code sessions, Claude Desktop cowork
+  (local agent mode) sessions via `--cowork-root`, and claude.ai
+  conversations via `--import-claude-ai conversations.json` (from Settings →
+  Privacy → Export data), all through the same pipeline and fidelity
+  reporting.
 - **A fidelity report on every page** — each source record is rendered, folded
   into an earlier turn, or counted as deliberately not rendered, and the three
   numbers are reconciled against the source record count. Corrupt lines are
@@ -77,11 +87,13 @@ document, use this one.
 
 ## Roadmap
 
-Gaps known and worth closing, roughly in order of value: rendering subagent
-transcripts (`<session>/subagents/agent-*.jsonl`) into the parent document
-rather than only counting them; a Markdown output format; pagination for very
-large sessions; an import adapter for claude.ai's `conversations.json` export;
-client-side search across an archive.
+Remaining gaps worth closing: pagination for very large sessions, and
+client-side search across an archive. (Subagent rendering, the Markdown
+format, cowork discovery and the claude.ai importer, formerly listed here,
+shipped.) Two caveats on the new sources: the cowork directory layout follows
+Claude Desktop's documented structure but was tested against synthetic data,
+and the claude.ai importer targets the export schema as of mid-2026 — reports
+with real exports that parse differently are welcome.
 
 ## Scope
 
@@ -93,8 +105,9 @@ it can archive is decided by where a session's transcript lives:
 | Claude Code CLI | **Yes** — its native format. |
 | Claude Code desktop app | **Yes** — sessions run locally and write the same files. |
 | Claude Code web/mobile, bridged to your machine | **Yes** — the local side writes a transcript, and bridge records are chain-resolved so the pieces come out as one conversation. |
+| Claude Desktop cowork (local agent mode) | **Yes** — same format under a different base directory, merged into discovery via `--cowork-root` (auto-detected). |
+| claude.ai chats, Claude Desktop chat, mobile app | **Via export** — request your data export (Settings → Privacy → Export data) and run `--import-claude-ai conversations.json`. The export carries no token usage and no model names, and the page says so. |
 | Claude Code cloud sessions (never bridged) | No — nothing is written to your disk. |
-| claude.ai chats, Claude Desktop chat, mobile app | No — different product, server-side storage, different format. An import adapter for claude.ai's data export (`conversations.json`) would be a natural extension: the rendering layer is format-agnostic, so it needs one new parser, not new output formats. |
 
 ## Formats
 
@@ -102,6 +115,7 @@ it can archive is decided by where a session's transcript lives:
 |---|---|
 | `html` | Chat-style page: your turns right, Claude's left, collapsible tool I/O, filterable table of contents, light and dark themes. Self-contained — no external assets. |
 | `text` | Plain UTF-8. Human turns and tool output are reproduced byte-for-byte and never re-wrapped. |
+| `markdown` | For note vaults (Obsidian etc.). Claude's prose is markdown and passes through live; human turns and tool I/O are fenced verbatim, with fences sized past any backtick run inside them. |
 | `latex` | A standalone XeLaTeX document, or with `--fragment` a body you can `\input` into your own paper. |
 | `pdf` | The LaTeX compiled with `xelatex` (two passes, for the table of contents). |
 

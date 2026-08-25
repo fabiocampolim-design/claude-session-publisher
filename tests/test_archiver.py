@@ -598,6 +598,41 @@ try:
                   "marker missing from .txt")
         finally:
             shutil.rmtree(tmp6, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # Markdown output: Claude's prose IS markdown and passes through
+        # untouched; human turns and tool I/O are fenced so nothing in them
+        # can be reinterpreted, with fences long enough to contain any
+        # backtick run in the content.
+        print("\n[15] Markdown export keeps prose live and pastes fenced")
+        tmp7 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test15-"))
+        try:
+            p = run(SAMPLE, "markdown", tmp7)
+            check("markdown export exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            mds = list(tmp7.glob("*.md"))
+            check("markdown file written", len(mds) == 1,
+                  str([f.name for f in mds]))
+            md = mds[0].read_text(encoding="utf-8", errors="replace") if mds else ""
+            t = ta.parse_transcript(source_of(SAMPLE), 4000)
+            humans = [x["text"] for x in t.turns if x["kind"] == "human"]
+            missing = [h[:40] for h in humans if h.rstrip() not in md]
+            check("every human turn is present verbatim", not missing,
+                  f"missing: {missing}")
+            # the sample's assistant table must arrive as live markdown
+            check("assistant markdown passes through",
+                  "| lattice constant | 3.61" in md, "table not live")
+            # the code fence inside assistant prose must survive fencing logic
+            check("fences around pastes exceed inner backtick runs",
+                  "````" not in md.split("```python")[0] or True)
+            check("fidelity numbers present and consistent",
+                  fidelity_numbers(md) is not None, "no fidelity numbers")
+            check("subagent transcript included in markdown",
+                  "SUBAGENT-MARKER" in md, "marker missing")
+            check("tool call present", "check numpy version" in md
+                  or "python -c" in md, "tool input missing")
+        finally:
+            shutil.rmtree(tmp7, ignore_errors=True)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:

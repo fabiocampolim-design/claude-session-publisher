@@ -1684,6 +1684,13 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         q.write_text(body, encoding="utf-8")
         written.append((q, len(body)))
 
+    if "markdown" in formats:
+        body = emit_markdown(t, ctx, tool_output=include_io, agents=agents,
+                             subagents_on=include_agents)
+        q = out_path.with_suffix(".md")
+        q.write_text(body, encoding="utf-8")
+        written.append((q, len(body)))
+
     if "latex" in formats or "pdf" in formats:
         src, tally = emit_latex(t, ctx, fragment=fragment,
                                 tool_output=include_io, agents=agents,
@@ -2162,6 +2169,80 @@ def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
                   f"  SUBAGENT TRANSCRIPT agent-{aid}  "
                   f"({sum(at.record_types.values()):,} records)", bar]
             _text_turns(at.turns, L, W, tool_output)
+    return "\n".join(L) + "\n"
+
+
+def _md_fence(text: str, lang: str = "") -> str:
+    """Fence verbatim content with more backticks than any run inside it."""
+    longest = max((len(r) for r in re.findall(r"`+", text)), default=0)
+    f = "`" * max(3, longest + 1)
+    return f"{f}{lang}\n{text}\n{f}"
+
+
+def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
+                  subagents_on: bool = True) -> str:
+    """Markdown for note vaults. Claude's prose IS markdown and passes through
+    live; human turns and tool I/O are fenced so nothing in them can be
+    reinterpreted -- the same verbatim guarantee the text format gives."""
+    L = [f"# {ctx['title']}", "",
+         f"- Session: `{ctx['session_id']}`",
+         f"- {ctx['subtitle']}", ""]
+    if ctx["summary_text"]:
+        L += ["## Session summary", "", ctx["summary_text"], ""]
+    L += ["## Fidelity report", ""]
+    for label, n in fidelity_lines(t):
+        L.append(f"- {label}: {n:,}")
+    for aid, _af, at in agents:
+        L.append(f"- subagent transcript agent-{aid}"
+                 f"{'' if subagents_on else ' (not rendered)'}: "
+                 f"{sum(at.record_types.values()):,}")
+    n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
+    L += ["", _format_note(tool_output, n_tools),
+          "Human turns and tool I/O are fenced verbatim below; Claude's own "
+          "prose is markdown and is left live, so its headings appear in this "
+          "document's outline.", ""]
+
+    def turns_md(turns):
+        for turn in turns:
+            ts = (turn.get("ts") or "")[:19].replace("T", " ")
+            kind = turn["kind"]
+            if kind == "human":
+                L.extend([f"## Human — {ts}", "",
+                          _md_fence(turn["text"].rstrip()), ""])
+            elif kind == "assistant":
+                L.extend([f"## Claude — {ts}", "", turn.get("text", ""), ""])
+            elif kind == "thinking":
+                L.extend([f"### Thinking — {ts}", "",
+                          turn.get("text", "") or "*(no text: display=omitted)*", ""])
+            elif kind == "tool":
+                err = " **[ERROR]**" if turn.get("is_error") else ""
+                head = shorten(str(turn.get("chip", "")) + " — "
+                               + str(turn.get("label", "")), 90)
+                L.append(f"**Tool · {head}**{err} · {ts}")
+                if tool_output:
+                    L.extend(["", _md_fence(pretty_tool_input(turn.get("input") or ""))])
+                    if turn.get("output_text"):
+                        L.extend(["", _md_fence(turn["output_text"])])
+                    elif not turn.get("resolved"):
+                        L.extend(["", "*(no result in the source)*"])
+                    for _ in turn.get("output_images") or []:
+                        L.extend(["", "*(image omitted in this format)*"])
+                L.append("")
+            else:
+                badge = str(turn.get("badge", kind))
+                L.append(f"> **{badge}** · {ts}")
+                if turn.get("text"):
+                    L.extend(["", _md_fence(turn["text"].rstrip())])
+                L.append("")
+
+    turns_md(t.turns)
+    if agents and subagents_on:
+        for aid, _af, at in agents:
+            L.extend(["", "---", "",
+                      f"# Subagent transcript: agent-{aid}",
+                      f"*({sum(at.record_types.values()):,} records; a background "
+                      "agent's own conversation)*", ""])
+            turns_md(at.turns)
     return "\n".join(L) + "\n"
 
 
@@ -3068,8 +3149,8 @@ def main() -> None:
                     help="elide the middle of tool output longer than this many chars (0 = never)")
     ap.add_argument("--full", action="store_true", help="never elide tool output")
     ap.add_argument("--format", default="html",
-                    help="comma-separated: html, text, latex, pdf (default: html). "
-                         "pdf compiles the LaTeX with xelatex")
+                    help="comma-separated: html, text, markdown (md), latex, pdf "
+                         "(default: html). pdf compiles the LaTeX with xelatex")
     ap.add_argument("--tool-output", choices=("on", "off"), default="on",
                     help="include tool input and output (default: on). Independent of "
                          "--format. With it off, a tool call is a single labelled line, "
@@ -3104,11 +3185,13 @@ def main() -> None:
                     sessions=scan_all_sessions(projects_root, cowork_root))
         return
 
-    formats = tuple(f.strip().lower() for f in args.format.split(",") if f.strip())
-    unknown = [f for f in formats if f not in ("html", "text", "latex", "pdf")]
+    formats = tuple("markdown" if f.strip().lower() == "md" else f.strip().lower()
+                    for f in args.format.split(",") if f.strip())
+    unknown = [f for f in formats
+               if f not in ("html", "text", "markdown", "latex", "pdf")]
     if unknown:
         ap.error(f"unknown --format value(s): {', '.join(unknown)} "
-                 "(choose from html, text, latex, pdf)")
+                 "(choose from html, text, markdown, latex, pdf)")
 
     if args.import_claude_ai:
         convs = load_claude_ai_export(Path(args.import_claude_ai))
