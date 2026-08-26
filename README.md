@@ -1,8 +1,19 @@
 # claude-session-publisher
 
+[![Tests](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml/badge.svg)](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![Dependencies: stdlib only](https://img.shields.io/badge/dependencies-stdlib%20only-brightgreen)](transcript_archiver.py)
+[![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#requirements)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Turn a Claude Code session into a single self-contained document — HTML, plain
 text, LaTeX or PDF — with a fidelity report proving nothing was silently
 dropped.
+
+> **Feedback is highly appreciated.** This tool is young and transcripts are
+> wild — if a session of yours renders oddly, a number in the fidelity report
+> doesn't reconcile, or a format you need is missing, please
+> [open an issue](https://github.com/fabiocampolim-design/claude-session-publisher/issues).
 
 Claude Code writes every session to a JSON Lines file under
 `~/.claude/projects/`. That file is complete but unreadable: interleaved
@@ -19,6 +30,17 @@ python transcript_archiver.py <session-id>
 python transcript_archiver.py <session-id> --format html,text,latex,pdf
 python transcript_archiver.py --index          # rebuild the index page
 ```
+
+## Video preview
+
+*Coming soon — a short tour: archive a real session, open the HTML and flip
+the theme, walk the fidelity report, and print the PDF.*
+
+<!-- VIDEO PLACEHOLDER: drag the finished .mp4 into this file in GitHub's web
+     editor (it uploads and inserts a playable link), or embed a YouTube
+     thumbnail linking to the video:
+     [![Video preview](https://img.youtube.com/vi/<VIDEO_ID>/maxresdefault.jpg)](https://www.youtube.com/watch?v=<VIDEO_ID>)
+-->
 
 ## Features
 
@@ -96,9 +118,31 @@ LaTeX/PDF output fit for a paper's appendix. If you want a quick shareable
 web link, use Simon's tool; if you want a complete, auditable record or a
 document, use this one.
 
+## How it was built
+
+With itself watching, in a sense: the whole tool was developed in Claude Code
+(Opus 5 and Fable 5), and every one of those development sessions is archivable
+by the result. The effort, reconstructed from the session transcripts: **ten
+days from first prototype to release** (August 16–26, 2026), across roughly
+eight long working sessions — some 40 MB of raw transcript — and 15 commits.
+The division of labour: I set the direction, made the design calls (what
+counts as fidelity, what a human turn is allowed to look like, when a chain is
+a continuation vs a fork) and broke it repeatedly against hundreds of
+thousands of records from my real archive; Claude wrote the implementation and
+the test suite, and proposed the reconciliation model that became the fidelity
+report. The first public commit landed only on day nine — everything before
+that was survival testing.
+
 ## Roadmap
 
-Remaining gap worth closing: client-side search across a whole archive.
+Gaps worth closing:
+
+- **Client-side search across a whole archive.**
+- **First-class Linux and macOS support.** CI already runs the suite on
+  Linux, but both platforms need real-world verification: cowork-root
+  auto-detection, TeX font paths, and archives of sessions produced there.
+  Reports from Linux/Mac users are especially welcome.
+
 (Subagent rendering, the Markdown format, cowork discovery, the claude.ai
 importer, and pagination, formerly listed here, shipped.) Two caveats on the
 sources: the cowork directory layout follows Claude Desktop's documented
