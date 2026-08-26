@@ -31,17 +31,6 @@ python transcript_archiver.py <session-id> --format html,text,latex,pdf
 python transcript_archiver.py --index          # rebuild the index page
 ```
 
-## Video preview
-
-*Coming soon — a short tour: archive a real session, open the HTML and flip
-the theme, walk the fidelity report, and print the PDF.*
-
-<!-- VIDEO PLACEHOLDER: drag the finished .mp4 into this file in GitHub's web
-     editor (it uploads and inserts a playable link), or embed a YouTube
-     thumbnail linking to the video:
-     [![Video preview](https://img.youtube.com/vi/<VIDEO_ID>/maxresdefault.jpg)](https://www.youtube.com/watch?v=<VIDEO_ID>)
--->
-
 ## Features
 
 - **Five formats from one parse** — HTML, plain text, Markdown, LaTeX and PDF
@@ -171,9 +160,11 @@ Gaps worth closing:
 (Subagent rendering, the Markdown format, cowork discovery, the claude.ai
 importer, and pagination, formerly listed here, shipped.) Two caveats on the
 sources: the cowork directory layout follows Claude Desktop's documented
-structure but was tested against synthetic data, and the claude.ai importer
-targets the export schema as of mid-2026 — reports with real exports that
-parse differently are welcome.
+structure but was tested against synthetic data, and the claude.ai importer —
+now validated against a real August 2026 export (fidelity report reconciled
+exactly, accented UTF-8 intact) — targets the export schema as of mid-2026;
+that export contained no in-project conversations, so reports of exports that
+parse differently, project chats especially, remain welcome.
 
 ## Where files go
 
