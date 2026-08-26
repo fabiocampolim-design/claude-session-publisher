@@ -107,46 +107,6 @@ LaTeX/PDF output fit for a paper's appendix. If you want a quick shareable
 web link, use Simon's tool; if you want a complete, auditable record or a
 document, use this one.
 
-## How it was built
-
-With itself watching, in a sense: the whole tool was developed in Claude Code
-(Opus 5 and Fable 5), and every one of those development sessions is archivable
-by the result. The effort, reconstructed from the session transcripts: **ten
-days from first prototype to release** (August 16–26, 2026), across roughly
-eight long working sessions — some 40 MB of raw transcript — and 15 commits.
-The division of labour, reconstructed from those same transcripts and stated
-in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
-scientific papers use):
-
-- **Conceptualization** — Fabio: the tool's premise (a full-fidelity,
-  self-contained record of an AI-assisted session, fit for scientific
-  reporting) and most of the feature ideas — the P/R reference tags for citing
-  prompts in a paper, the tool-output switch, the live-activity index,
-  pagination. Claude: the render/fold/count reconciliation model that became
-  the fidelity report.
-- **Methodology** — Claude: chain resolution by uuid-set comparison,
-  per-`requestId` usage dedup, the verbatim-human-turn rule. Fabio: the
-  priority order (content fidelity first, then sources, then formats) and the
-  academic-publishing requirements that shaped the LaTeX fragment.
-- **Software** — Claude, all of it.
-- **Validation** — Fabio: broke every build against hundreds of thousands of
-  records from his real archive, caught the stale-page, overflow and layout
-  defects, and set the bar ("this needs high accuracy"). Claude: the
-  145-check suite and CI.
-- **Investigation** — Claude: code and documentation analysis of the
-  neighbouring tools for the comparison section, directed by Fabio.
-- **Data curation** — Claude: the synthetic sample and the showcase
-  conversation, built to carry exactly the cases that had broken on real data.
-- **Visualization** — Fabio: the chat layout (human right, Claude left), box
-  styling, tag/timestamp placement. Claude: the HTML/CSS realising it.
-- **Writing** — Claude: original draft (README, commit messages); Fabio:
-  review and editing.
-- **Resources, supervision, project administration, funding acquisition** —
-  Fabio.
-
-The first public commit landed only on day nine — everything before
-that was survival testing.
-
 ## Roadmap
 
 Gaps worth closing:
@@ -307,6 +267,32 @@ Cost figures come from the `PRICING` table at the top of the script — public
 list rates, hardcoded as of August 2026. When rates change, edit that table;
 models it does not know are reported as "no list price" rather than priced
 wrongly.
+
+## How it was built
+
+With itself watching, in a sense: the whole tool was developed in Claude Code
+(Opus 5 and Fable 5), and every one of those development sessions is archivable
+by the result. The effort, reconstructed from the session transcripts: **ten
+days from first prototype to release** (August 16–26, 2026), across roughly
+eight long working sessions — some 40 MB of raw transcript — and 15 commits.
+The first public commit landed only on day nine — everything before that was
+survival testing.
+
+The division of labour, reconstructed from those same transcripts and stated
+in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
+scientific papers use):
+
+| CRediT role | Fabio | Claude |
+|---|---|---|
+| **Conceptualization** | The premise — a full-fidelity, self-contained record of an AI-assisted session, fit for scientific reporting — and most feature ideas: P/R citation tags, the tool-output switch, the live-activity index, pagination | The render/fold/count reconciliation model that became the fidelity report |
+| **Methodology** | The priority order (content fidelity first, then sources, then formats); the academic-publishing requirements that shaped the LaTeX fragment | Chain resolution by uuid-set comparison; per-`requestId` usage dedup; the verbatim-human-turn rule |
+| **Software** | — | All of it |
+| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*) | The 145-check test suite and CI |
+| **Investigation** | Directed the survey of neighbouring tools | Code and documentation analysis for the comparison section |
+| **Data curation** | — | The synthetic sample and the showcase conversation, built to carry exactly the cases that had broken on real data |
+| **Visualization** | The chat layout (human right, Claude left), box styling, tag and timestamp placement | The HTML/CSS realising it |
+| **Writing** | Review and editing | Original draft (README, commit messages) |
+| **Resources · Supervision · Project administration · Funding acquisition** | All | — |
 
 ## Licence
 
