@@ -45,6 +45,11 @@ python transcript_archiver.py --index          # rebuild the index page
 - **Human turns are verbatim** — typed text and pastes are never run through a
   markdown renderer, so a pasted traceback or columnar benchmark stays
   byte-for-byte intact in every format.
+- **Citable reference tags** — every prompt is P1, P2, … and every response
+  R1, R2, …, sequential and unique within the document (subagent turns are
+  prefixed A1., A2., …), so a paper can say "in prompt P32" or "in response
+  A2.R4". Tags appear beside the speaker label in all formats and are anchors
+  in the HTML (`#P32` deep-links to the prompt).
 - **Session-chain resolution** — a resumed or bridged conversation is written
   to a new file repeating the earlier records; the archiver finds the most
   complete file by comparing record-uuid sets, follows genuine continuations,
