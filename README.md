@@ -125,12 +125,37 @@ With itself watching, in a sense: the whole tool was developed in Claude Code
 by the result. The effort, reconstructed from the session transcripts: **ten
 days from first prototype to release** (August 16–26, 2026), across roughly
 eight long working sessions — some 40 MB of raw transcript — and 15 commits.
-The division of labour: I set the direction, made the design calls (what
-counts as fidelity, what a human turn is allowed to look like, when a chain is
-a continuation vs a fork) and broke it repeatedly against hundreds of
-thousands of records from my real archive; Claude wrote the implementation and
-the test suite, and proposed the reconciliation model that became the fidelity
-report. The first public commit landed only on day nine — everything before
+The division of labour, reconstructed from those same transcripts and stated
+in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
+scientific papers use):
+
+- **Conceptualization** — Fabio: the tool's premise (a full-fidelity,
+  self-contained record of an AI-assisted session, fit for scientific
+  reporting) and most of the feature ideas — the P/R reference tags for citing
+  prompts in a paper, the tool-output switch, the live-activity index,
+  pagination. Claude: the render/fold/count reconciliation model that became
+  the fidelity report.
+- **Methodology** — Claude: chain resolution by uuid-set comparison,
+  per-`requestId` usage dedup, the verbatim-human-turn rule. Fabio: the
+  priority order (content fidelity first, then sources, then formats) and the
+  academic-publishing requirements that shaped the LaTeX fragment.
+- **Software** — Claude, all of it.
+- **Validation** — Fabio: broke every build against hundreds of thousands of
+  records from his real archive, caught the stale-page, overflow and layout
+  defects, and set the bar ("this needs high accuracy"). Claude: the
+  145-check suite and CI.
+- **Investigation** — Claude: code and documentation analysis of the
+  neighbouring tools for the comparison section, directed by Fabio.
+- **Data curation** — Claude: the synthetic sample and the showcase
+  conversation, built to carry exactly the cases that had broken on real data.
+- **Visualization** — Fabio: the chat layout (human right, Claude left), box
+  styling, tag/timestamp placement. Claude: the HTML/CSS realising it.
+- **Writing** — Claude: original draft (README, commit messages); Fabio:
+  review and editing.
+- **Resources, supervision, project administration, funding acquisition** —
+  Fabio.
+
+The first public commit landed only on day nine — everything before
 that was survival testing.
 
 ## Roadmap
