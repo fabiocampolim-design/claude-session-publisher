@@ -2219,6 +2219,9 @@ def _text_turns(turns, L, W, tool_output):
         elif kind == "thinking":
             L += [""] + _turn_rule("THINKING", ts, W, right=False)
             L += ["", wrap_prose(turn.get("text", "") or "(no text: display=omitted)", W), ""]
+        elif kind == "user_image":
+            L += [""] + _turn_rule("HUMAN - PASTED IMAGE", ts, W, right=True)
+            L += ["", "  (image omitted in this format; the HTML archive holds it)", ""]
         elif kind == "tool":
             err = "  [ERROR]" if turn.get("is_error") else ""
             head = shorten("TOOL " + str(turn.get("chip", "")) + " - "
@@ -2314,6 +2317,10 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
             elif kind == "thinking":
                 L.extend([f"### Thinking — {ts}", "",
                           turn.get("text", "") or "*(no text: display=omitted)*", ""])
+            elif kind == "user_image":
+                L.extend([f"## Human — pasted image — {ts}", "",
+                          "*(image omitted in this format; the HTML archive "
+                          "holds it)*", ""])
             elif kind == "tool":
                 err = " **[ERROR]**" if turn.get("is_error") else ""
                 head = shorten(str(turn.get("chip", "")) + " — "
@@ -2529,6 +2536,11 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                 for _ in turn.get("output_images") or []:
                     inner += inl("[image omitted]") + "\n\n"
                 B.append(box("toolturn", title, inner))
+            elif kind == "user_image":
+                B.append(box("humanturn",
+                             "HUMAN - PASTED IMAGE \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
+                             inl("(image omitted in this format; the HTML "
+                                 "archive holds it)") + "\n\n"))
             else:
                 badge = esc(shorten(str(turn.get("badge", kind))))
                 B.append(box("systurn", badge + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",

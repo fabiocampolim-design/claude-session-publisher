@@ -130,6 +130,22 @@ it can archive is decided by where a session's transcript lives:
 | claude.ai chats, Claude Desktop chat, mobile app | **Via export** — request your data export (Settings → Privacy → Export data) and run `--import-claude-ai conversations.json`. The export carries no token usage and no model names, and the page says so. |
 | Claude Code cloud sessions (never bridged) | No — nothing is written to your disk. |
 
+## Try it
+
+A fully invented showcase conversation ships in `examples/` — a zero-mode
+hunt in a graphene nanoribbon, built to exercise everything: reference tags
+across two models, a failing tool call and its retry, a verbatim pasted
+table, a pasted image, Greek and box drawing, a background subagent
+(tagged `A1.*`), a context compaction, an unresolved tool call and one
+deliberately corrupt line the fidelity report counts.
+
+```bash
+python transcript_archiver.py 0000c0de-cafe-4000-8000-00000000f00d \
+    --projects-root examples --archive-dir demo --format html,markdown,pdf
+```
+
+![A page of the showcase PDF](docs/showcase-pdf.png)
+
 ## Formats
 
 | | |

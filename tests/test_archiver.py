@@ -834,6 +834,36 @@ try:
                   "missing")
         finally:
             shutil.rmtree(tmp11, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # The committed showcase conversation must archive cleanly, and a
+        # pasted image must be announced as such in the page-based formats,
+        # not surface as an empty mystery box.
+        print("\n[20] Showcase conversation archives cleanly in every format")
+        SHOW = "0000c0de-cafe-4000-8000-00000000f00d"
+        tmp12 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test20-"))
+        try:
+            check("showcase fixture exists",
+                  (ROOT / f"{SHOW}.jsonl").exists(), "run examples/make_showcase.py")
+            p = run(SHOW, "html,text,markdown,latex", tmp12)
+            check("showcase export exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            tex = next((f for f in tmp12.glob("*.tex")
+                        if "fragment" not in f.name), None)
+            tex = tex.read_text(encoding="utf-8", errors="replace") if tex else ""
+            check("pasted image announced in latex",
+                  "PASTED IMAGE" in tex and "user\\_image" not in tex,
+                  "image rendered as generic raw block")
+            txt = next(iter(tmp12.glob("*.txt")), None)
+            txt = txt.read_text(encoding="utf-8", errors="replace") if txt else ""
+            check("pasted image announced in text", "PASTED IMAGE" in txt,
+                  "missing")
+            page = next(iter(tmp12.glob("*.html")), None)
+            page = page.read_text(encoding="utf-8", errors="replace") if page else ""
+            check("pasted image embedded in html", "data:image/png;base64" in page,
+                  "image not embedded")
+        finally:
+            shutil.rmtree(tmp12, ignore_errors=True)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:
