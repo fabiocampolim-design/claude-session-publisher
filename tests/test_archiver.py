@@ -810,19 +810,19 @@ try:
                   'id="A1.P1"' in page and 'id="A1.R1"' in page, "missing")
             txt = next(iter(tmp11.glob("*.txt")), None)
             txt = txt.read_text(encoding="utf-8", errors="replace") if txt else ""
-            check("text format tags prompts", "HUMAN P1" in txt, "no HUMAN P1")
-            check("text format tags responses", "CLAUDE R1" in txt, "no CLAUDE R1")
+            check("text format tags prompts", "HUMAN - P1" in txt, "no HUMAN - P1")
+            check("text format tags responses", "CLAUDE - R1" in txt, "no CLAUDE - R1")
             md = next(iter(tmp11.glob("*.md")), None)
             md = md.read_text(encoding="utf-8", errors="replace") if md else ""
-            check("markdown tags prompts", "## Human P1 " in md
-                  or "## Human P1\n" in md, "no tagged heading")
-            check("markdown tags responses", "## Claude R1 " in md
-                  or "## Claude R1\n" in md, "no tagged heading")
+            check("markdown tags prompts", "## Human - P1 " in md,
+                  "no tagged heading")
+            check("markdown tags responses", "## Claude - R1 " in md,
+                  "no tagged heading")
             tex = next((f for f in tmp11.glob("*.tex")
                         if "fragment" not in f.name), None)
             tex = tex.read_text(encoding="utf-8", errors="replace") if tex else ""
             check("latex tags sit by the label, timestamp flushed right",
-                  "HUMAN P1 \\hfill" in tex and "CLAUDE R1 \\hfill" in tex,
+                  "HUMAN - P1 \\hfill" in tex and "CLAUDE - R1 \\hfill" in tex,
                   "tags not in box titles")
             check("latex titles span the full width so \\hfill can separate",
                   "attach boxed title" not in tex,

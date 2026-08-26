@@ -2209,10 +2209,10 @@ def _text_turns(turns, L, W, tool_output):
         ts = (turn.get("ts") or "")[:19].replace("T", " ")
         kind = turn["kind"]
         if kind == "human":
-            label = "HUMAN" + (f" {turn['tag']}" if turn.get("tag") else "")
+            label = "HUMAN" + (f" - {turn['tag']}" if turn.get("tag") else "")
             L += [""] + _turn_rule(label, ts, W, right=True) + ["", turn["text"].rstrip(), ""]
         elif kind == "assistant":
-            label = ("CLAUDE" + (f" {turn['tag']}" if turn.get("tag") else "")
+            label = ("CLAUDE" + (f" - {turn['tag']}" if turn.get("tag") else "")
                      + " " + str(turn.get("model", "")))
             L += [""] + _turn_rule(label, ts, W, right=False)
             L += ["", wrap_prose(turn.get("text", ""), W), ""]
@@ -2305,11 +2305,11 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
             ts = (turn.get("ts") or "")[:19].replace("T", " ")
             kind = turn["kind"]
             if kind == "human":
-                tg = f" {turn['tag']}" if turn.get("tag") else ""
+                tg = f" - {turn['tag']}" if turn.get("tag") else ""
                 L.extend([f"## Human{tg} — {ts}", "",
                           _md_fence(turn["text"].rstrip()), ""])
             elif kind == "assistant":
-                tg = f" {turn['tag']}" if turn.get("tag") else ""
+                tg = f" - {turn['tag']}" if turn.get("tag") else ""
                 L.extend([f"## Claude{tg} — {ts}", "", turn.get("text", ""), ""])
             elif kind == "thinking":
                 L.extend([f"### Thinking — {ts}", "",
@@ -2502,11 +2502,11 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
             ts = (turn.get("ts") or "")[:19].replace("T", " ")
             kind = turn["kind"]
             if kind == "human":
-                tg = (" " + esc(turn["tag"])) if turn.get("tag") else ""
+                tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
                 B.append(box("humanturn", "HUMAN" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
                              verb(turn["text"].rstrip())))
             elif kind == "assistant":
-                tg = (" " + esc(turn["tag"])) if turn.get("tag") else ""
+                tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
                 B.append(box("claudeturn", "CLAUDE" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
                              md(turn.get("text", ""))))
             elif kind == "thinking":
