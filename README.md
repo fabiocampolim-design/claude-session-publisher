@@ -106,6 +106,16 @@ structure but was tested against synthetic data, and the claude.ai importer
 targets the export schema as of mid-2026 — reports with real exports that
 parse differently are welcome.
 
+## Where files go
+
+Input is discovered under `--projects-root` (default `~/.claude/projects`)
+and, when the directory exists, `--cowork-root` (auto-detected per platform).
+Output lands in `--archive-dir` (default `~/Desktop/CLAUDE_CONVERSATIONS`):
+each session becomes `<session-id>_<title-slug>.<ext>` there, one file per
+format, and `--index` writes `index.html` into the same directory. To place a
+single archive exactly, `--out path/to/file.html` overrides the full path —
+sibling formats reuse the same stem with their own extension.
+
 ## Scope
 
 The scribe reads the transcript files Claude Code writes to your disk, so what

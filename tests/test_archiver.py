@@ -824,6 +824,12 @@ try:
             check("latex tags sit by the label, timestamp flushed right",
                   "HUMAN P1 \\hfill" in tex and "CLAUDE R1 \\hfill" in tex,
                   "tags not in box titles")
+            check("latex titles span the full width so \\hfill can separate",
+                  "attach boxed title" not in tex,
+                  "content-hugging title tab defeats \\hfill")
+            check("latex timestamps are styled smaller than the label",
+                  "\\hfill {\\normalfont\\scriptsize\\ttfamily" in tex,
+                  "timestamp not de-emphasized")
             check("latex subagent tags carry the prefix", "A1.P1" in tex,
                   "missing")
         finally:

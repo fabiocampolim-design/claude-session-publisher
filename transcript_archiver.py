@@ -2372,21 +2372,21 @@ _TEX_PREAMBLE = r"""\documentclass[10pt,a4paper]{article}
 \newtcolorbox{humanturn}[1]{breakable,enhanced,colback=humanbg,colframe=humanc,
   boxrule=0.9pt,arc=3mm,left skip=0.16\linewidth,
   fonttitle=\bfseries\footnotesize,colbacktitle=humanc,coltitle=white,
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  title={#1}}
 \newtcolorbox{claudeturn}[1]{breakable,enhanced,colback=claudebg,colframe=claudec,
   boxrule=0.9pt,arc=3mm,right skip=0.10\linewidth,
   fonttitle=\bfseries\footnotesize,colbacktitle=claudec,coltitle=white,
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  title={#1}}
 \newtcolorbox{thinkturn}[1]{breakable,enhanced,colback=thinkbg,colframe=thinkc,
   boxrule=0.6pt,arc=2mm,right skip=0.10\linewidth,
   fonttitle=\bfseries\footnotesize,colbacktitle=thinkc,coltitle=white,
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  title={#1}}
 \newtcolorbox{toolturn}[1]{breakable,enhanced,colback=toolbg,colframe=toolc,
   boxrule=0.5pt,arc=1mm,fonttitle=\bfseries\scriptsize,colbacktitle=toolc,
-  coltitle=white,attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  coltitle=white,title={#1}}
 \newtcolorbox{systurn}[1]{breakable,enhanced,colback=sysbg,colframe=sysc,
   boxrule=0.5pt,arc=1mm,fonttitle=\bfseries\scriptsize,colbacktitle=sysc,
-  coltitle=white,attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  coltitle=white,title={#1}}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{4pt}
 \sloppy
@@ -2416,21 +2416,21 @@ _FRAGMENT_HEAD = r"""% Transcript body only -- \input this into your own documen
 \newtcolorbox{humanturn}[1]{breakable,enhanced,colback=humanbg,colframe=humanc,
   boxrule=0.9pt,arc=3mm,left skip=0.16\linewidth,
   fonttitle=\bfseries\footnotesize,colbacktitle=humanc,coltitle=white,
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  title={#1}}
 \newtcolorbox{claudeturn}[1]{breakable,enhanced,colback=claudebg,colframe=claudec,
   boxrule=0.9pt,arc=3mm,right skip=0.10\linewidth,
   fonttitle=\bfseries\footnotesize,colbacktitle=claudec,coltitle=white,
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  title={#1}}
 \newtcolorbox{thinkturn}[1]{breakable,enhanced,colback=thinkbg,colframe=thinkc,
   boxrule=0.6pt,arc=2mm,right skip=0.10\linewidth,
   fonttitle=\bfseries\footnotesize,colbacktitle=thinkc,coltitle=white,
-  attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  title={#1}}
 \newtcolorbox{toolturn}[1]{breakable,enhanced,colback=toolbg,colframe=toolc,
   boxrule=0.5pt,arc=1mm,fonttitle=\bfseries\scriptsize,colbacktitle=toolc,
-  coltitle=white,attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  coltitle=white,title={#1}}
 \newtcolorbox{systurn}[1]{breakable,enhanced,colback=sysbg,colframe=sysc,
   boxrule=0.5pt,arc=1mm,fonttitle=\bfseries\scriptsize,colbacktitle=sysc,
-  coltitle=white,attach boxed title to top left={xshift=6pt,yshift=-2pt},title={#1}}
+  coltitle=white,title={#1}}
 }{}
 \makeatother
 
@@ -2503,20 +2503,20 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
             kind = turn["kind"]
             if kind == "human":
                 tg = (" " + esc(turn["tag"])) if turn.get("tag") else ""
-                B.append(box("humanturn", "HUMAN" + tg + " \\hfill " + esc(ts),
+                B.append(box("humanturn", "HUMAN" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
                              verb(turn["text"].rstrip())))
             elif kind == "assistant":
                 tg = (" " + esc(turn["tag"])) if turn.get("tag") else ""
-                B.append(box("claudeturn", "CLAUDE" + tg + " \\hfill " + esc(ts),
+                B.append(box("claudeturn", "CLAUDE" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
                              md(turn.get("text", ""))))
             elif kind == "thinking":
-                B.append(box("thinkturn", "THINKING \\hfill " + esc(ts),
+                B.append(box("thinkturn", "THINKING" + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
                              md(turn.get("text", "") or "(no text: display=omitted)")))
             elif kind == "tool":
                 err = " [ERROR]" if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
                                    + str(turn.get("label", "")) + err))
-                title = "TOOL: " + head + " \\hfill " + esc(ts)
+                title = "TOOL: " + head + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}"
                 if not tool_output:
                     # A bare title box: the call is on the record, its payload is not.
                     B.append("\\begin{toolturn}{" + title + "}\\end{toolturn}\n")
@@ -2531,7 +2531,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                 B.append(box("toolturn", title, inner))
             else:
                 badge = esc(shorten(str(turn.get("badge", kind))))
-                B.append(box("systurn", badge + " \\hfill " + esc(ts),
+                B.append(box("systurn", badge + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
                              verb((turn.get("text") or "").rstrip())))
 
     emit_turns(t.turns)
