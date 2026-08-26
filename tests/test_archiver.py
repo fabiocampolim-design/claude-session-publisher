@@ -785,6 +785,49 @@ try:
                   str(sorted(hrefs - ids))[:200])
         finally:
             shutil.rmtree(tmp10, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # Reference tags: every human prompt is Pn, every Claude response Rn,
+        # sequential within the conversation, so main text can cite "in
+        # prompt P32" / "in response R12". Subagent turns get an A<k>. prefix
+        # so tags stay unique across the whole document. The tag sits by the
+        # speaker label; the timestamp stays on the other side of the box.
+        print("\n[19] P/R reference tags are sequential, unique, in every format")
+        tmp11 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test19-"))
+        try:
+            p = run(SAMPLE, "html,text,markdown,latex", tmp11)
+            check("tagged export exits 0", p.returncode == 0,
+                  p.stderr.strip()[-300:])
+            page = next(iter(tmp11.glob("*.html")), None)
+            page = page.read_text(encoding="utf-8", errors="replace") if page else ""
+            for tag in ("P1", "P2", "P3", "R1"):
+                check(f"html carries tag {tag} as an anchor",
+                      f'id="{tag}"' in page, "missing")
+            check("html has no phantom P4", 'id="P4"' not in page, "P4 present")
+            check("tags are unique", page.count('id="P1"') == 1,
+                  f"{page.count(chr(34) + 'P1' + chr(34))}")
+            check("subagent turns carry the A-prefixed tag",
+                  'id="A1.P1"' in page and 'id="A1.R1"' in page, "missing")
+            txt = next(iter(tmp11.glob("*.txt")), None)
+            txt = txt.read_text(encoding="utf-8", errors="replace") if txt else ""
+            check("text format tags prompts", "HUMAN P1" in txt, "no HUMAN P1")
+            check("text format tags responses", "CLAUDE R1" in txt, "no CLAUDE R1")
+            md = next(iter(tmp11.glob("*.md")), None)
+            md = md.read_text(encoding="utf-8", errors="replace") if md else ""
+            check("markdown tags prompts", "## Human P1 " in md
+                  or "## Human P1\n" in md, "no tagged heading")
+            check("markdown tags responses", "## Claude R1 " in md
+                  or "## Claude R1\n" in md, "no tagged heading")
+            tex = next((f for f in tmp11.glob("*.tex")
+                        if "fragment" not in f.name), None)
+            tex = tex.read_text(encoding="utf-8", errors="replace") if tex else ""
+            check("latex tags sit by the label, timestamp flushed right",
+                  "HUMAN P1 \\hfill" in tex and "CLAUDE R1 \\hfill" in tex,
+                  "tags not in box titles")
+            check("latex subagent tags carry the prefix", "A1.P1" in tex,
+                  "missing")
+        finally:
+            shutil.rmtree(tmp11, ignore_errors=True)
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:

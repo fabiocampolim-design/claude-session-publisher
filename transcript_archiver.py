@@ -1301,6 +1301,22 @@ def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime,
 </section>"""
 
 
+def assign_tags(t: Transcript, prefix: str = "") -> None:
+    """Give every prompt and response a citable id: P1, P2, ... / R1, R2, ...
+
+    Sequential within one transcript; subagent transcripts get a prefix
+    (A1., A2., ...) so a tag is unique across the whole document and main
+    text can say "in prompt P32" or "in response A2.R4" unambiguously."""
+    p = r = 0
+    for turn in t.turns:
+        if turn["kind"] == "human":
+            p += 1
+            turn["tag"] = f"{prefix}P{p}"
+        elif turn["kind"] == "assistant":
+            r += 1
+            turn["tag"] = f"{prefix}R{r}"
+
+
 def subagent_block(agents: list, subagents_on: bool) -> str:
     """Fidelity-report table of the session's subagent transcript files.
 
@@ -1349,10 +1365,12 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             counter += 1
             anchor = f"{anchor_prefix}turn-{counter}"
             cur_anchor = anchor
-            toc.append((anchor, truncate(turn["text"], 72), "human"))
+            tag = turn.get("tag", "")
+            tag_html = f' <span class="rtag" id="{esc(tag)}">{esc(tag)}</span>' if tag else ""
+            toc.append((anchor, (f"{tag} · " if tag else "") + truncate(turn["text"], 66), "human"))
             body.append(f"""
 <section class="turn human-turn" id="{anchor}" data-lane="human">
-  <div class="turn-label"><span class="who">Human</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
+  <div class="turn-label"><span class="who">Human{tag_html}</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
   <div class="turn-body">{turn["html"]}</div>
 </section>""")
 
@@ -1383,9 +1401,11 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
 
         elif kind == "assistant":
             side = ' <span class="badge side">subagent</span>' if turn.get("sidechain") else ""
+            tag = turn.get("tag", "")
+            tag_html = f' <span class="rtag" id="{esc(tag)}">{esc(tag)}</span>' if tag else ""
             body.append(f"""
 <section class="turn assistant-turn" data-lane="assistant">
-  <div class="turn-label"><span class="who">Claude</span>{side}<span class="ts"{ts_attr}>{ts_disp}</span></div>
+  <div class="turn-label"><span class="who">Claude{tag_html}</span>{side}<span class="ts"{ts_attr}>{ts_disp}</span></div>
   <div class="turn-body">{turn["html"]}</div>
 </section>""")
 
@@ -1510,6 +1530,9 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             agents.append((af.stem[len("agent-"):], af,
                            parse_transcript(af, max_tool_output)))
     include_agents = subagents == "on"
+    assign_tags(t)
+    for _k, (_aid2, _af2, _at2) in enumerate(agents, 1):
+        assign_tags(_at2, prefix=f"A{_k}.")
     for _aid, _af, at in agents:
         for model, agg in at.usage_by_model.items():
             for k, v in agg.items():
@@ -1566,19 +1589,19 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             'agents this session spawned. Each lives in its own file beside the '
             'session and is rendered here in full, with the same rules as the '
             'main transcript.</p></div></section>', "subagents"))
-        for aid, af, at in agents:
+        for k, (aid, af, at) in enumerate(agents, 1):
             inner_units, _ = render_turns(at, anchor_prefix=f"sa-{aid}-")
             inner = "".join(h for h, _a in inner_units)
             n_rec = sum(at.record_types.values())
             units.append((f"""
 <section class="turn subagent-block" id="subagent-{esc(aid)}" data-lane="subagent">
   <details>
-    <summary><span class="chip harness-chip">subagent</span> <code>agent-{esc(aid)}</code>
-      <span class="evidence">{n_rec:,} records &middot; {len(at.turns):,} turns</span></summary>
+    <summary><span class="chip harness-chip">subagent</span> <span class="rtag">A{k}</span> <code>agent-{esc(aid)}</code>
+      <span class="evidence">{n_rec:,} records &middot; {len(at.turns):,} turns &middot; turns tagged A{k}.P/A{k}.R</span></summary>
     <div class="subagent-body">{inner}</div>
   </details>
 </section>""", f"subagent-{aid}"))
-            sub_toc.append((f"subagent-{aid}", f"Subagent agent-{aid[:8]}", "system"))
+            sub_toc.append((f"subagent-{aid}", f"A{k} · agent-{aid[:8]}", "system"))
 
     chain_html = ""
     if related:
@@ -2186,9 +2209,12 @@ def _text_turns(turns, L, W, tool_output):
         ts = (turn.get("ts") or "")[:19].replace("T", " ")
         kind = turn["kind"]
         if kind == "human":
-            L += [""] + _turn_rule("HUMAN", ts, W, right=True) + ["", turn["text"].rstrip(), ""]
+            label = "HUMAN" + (f" {turn['tag']}" if turn.get("tag") else "")
+            L += [""] + _turn_rule(label, ts, W, right=True) + ["", turn["text"].rstrip(), ""]
         elif kind == "assistant":
-            L += [""] + _turn_rule("CLAUDE " + str(turn.get("model", "")), ts, W, right=False)
+            label = ("CLAUDE" + (f" {turn['tag']}" if turn.get("tag") else "")
+                     + " " + str(turn.get("model", "")))
+            L += [""] + _turn_rule(label, ts, W, right=False)
             L += ["", wrap_prose(turn.get("text", ""), W), ""]
         elif kind == "thinking":
             L += [""] + _turn_rule("THINKING", ts, W, right=False)
@@ -2235,10 +2261,11 @@ def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
     L += ["", wrap_prose(_format_note(tool_output, n_tools), W), ""]
     _text_turns(t.turns, L, W, tool_output)
     if agents and subagents_on:
-        for aid, _af, at in agents:
+        for k, (aid, _af, at) in enumerate(agents, 1):
             L += ["", bar,
-                  f"  SUBAGENT TRANSCRIPT agent-{aid}  "
-                  f"({sum(at.record_types.values()):,} records)", bar]
+                  f"  SUBAGENT TRANSCRIPT A{k}: agent-{aid}  "
+                  f"({sum(at.record_types.values()):,} records; "
+                  f"turns tagged A{k}.P / A{k}.R)", bar]
             _text_turns(at.turns, L, W, tool_output)
     return "\n".join(L) + "\n"
 
@@ -2278,10 +2305,12 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
             ts = (turn.get("ts") or "")[:19].replace("T", " ")
             kind = turn["kind"]
             if kind == "human":
-                L.extend([f"## Human — {ts}", "",
+                tg = f" {turn['tag']}" if turn.get("tag") else ""
+                L.extend([f"## Human{tg} — {ts}", "",
                           _md_fence(turn["text"].rstrip()), ""])
             elif kind == "assistant":
-                L.extend([f"## Claude — {ts}", "", turn.get("text", ""), ""])
+                tg = f" {turn['tag']}" if turn.get("tag") else ""
+                L.extend([f"## Claude{tg} — {ts}", "", turn.get("text", ""), ""])
             elif kind == "thinking":
                 L.extend([f"### Thinking — {ts}", "",
                           turn.get("text", "") or "*(no text: display=omitted)*", ""])
@@ -2308,9 +2337,9 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
 
     turns_md(t.turns)
     if agents and subagents_on:
-        for aid, _af, at in agents:
+        for k, (aid, _af, at) in enumerate(agents, 1):
             L.extend(["", "---", "",
-                      f"# Subagent transcript: agent-{aid}",
+                      f"# Subagent transcript A{k}: agent-{aid}",
                       f"*({sum(at.record_types.values()):,} records; a background "
                       "agent's own conversation)*", ""])
             turns_md(at.turns)
@@ -2473,10 +2502,12 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
             ts = (turn.get("ts") or "")[:19].replace("T", " ")
             kind = turn["kind"]
             if kind == "human":
-                B.append(box("humanturn", "HUMAN \\hfill " + esc(ts),
+                tg = (" " + esc(turn["tag"])) if turn.get("tag") else ""
+                B.append(box("humanturn", "HUMAN" + tg + " \\hfill " + esc(ts),
                              verb(turn["text"].rstrip())))
             elif kind == "assistant":
-                B.append(box("claudeturn", "CLAUDE \\hfill " + esc(ts),
+                tg = (" " + esc(turn["tag"])) if turn.get("tag") else ""
+                B.append(box("claudeturn", "CLAUDE" + tg + " \\hfill " + esc(ts),
                              md(turn.get("text", ""))))
             elif kind == "thinking":
                 B.append(box("thinkturn", "THINKING \\hfill " + esc(ts),
@@ -2505,10 +2536,11 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
 
     emit_turns(t.turns)
     if agents and subagents_on:
-        for aid, _af, at in agents:
-            B.append("\\section*{Subagent transcript: agent-" + esc(aid) + "}\n"
-                     "\\addcontentsline{toc}{section}{Subagent agent-"
-                     + esc(aid[:8]) + "}\n")
+        for k, (aid, _af, at) in enumerate(agents, 1):
+            B.append("\\section*{Subagent transcript A" + str(k) + ": agent-"
+                     + esc(aid) + "}\n"
+                     "\\addcontentsline{toc}{section}{Subagent A" + str(k)
+                     + ": agent-" + esc(aid[:8]) + "}\n")
             B.append(inl(f"({sum(at.record_types.values()):,} records; a background "
                          "agent's own conversation, archived from its transcript "
                          "file beside the session)") + "\n\n")
@@ -2930,6 +2962,8 @@ header.mast p{color:var(--ink-soft);margin:0;font-size:13.5px}
 .turn.filtered{display:none}
 .turn-label{display:flex;align-items:center;gap:9px;margin-bottom:5px;font-size:12.5px;flex-wrap:wrap}
 .turn-label .who{font-weight:700;font-family:"Cascadia Code","JetBrains Mono",monospace}
+.rtag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;background:var(--code-bg);
+  color:var(--ink-soft);letter-spacing:.04em;vertical-align:1px}
 .turn-label .ts{color:var(--ink-faint);margin-left:auto;font-family:"Cascadia Code",monospace;font-size:11px}
 .badge{font-size:10.5px;padding:1px 7px;border-radius:10px;background:var(--system-bg);color:var(--system)}
 .badge.side{background:var(--claude-bg);color:var(--claude)}
