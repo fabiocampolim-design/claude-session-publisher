@@ -150,6 +150,13 @@ it can archive is decided by where a session's transcript lives:
 | claude.ai chats, Claude Desktop chat, mobile app | **Via export** — request your data export (Settings → Privacy → Export data) and run `--import-claude-ai conversations.json`. The export carries no token usage and no model names, and the page says so. |
 | Claude Code cloud sessions (never bridged) | No — nothing is written to your disk. |
 
+Two hard-won facts from validating against a real account (August 2026): the
+claude.ai data export contains **standalone chats only** — conversations
+inside claude.ai Projects and Claude Desktop cowork sessions are not in it —
+and the local cowork store does **not** survive an app reinstall. The
+practical consequence: an archive only exists if you make it while the files
+do. Archive early, archive often.
+
 ## Try it
 
 A fully invented showcase conversation ships in `examples/` — a zero-mode
