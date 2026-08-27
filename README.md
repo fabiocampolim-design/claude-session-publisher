@@ -15,11 +15,18 @@ dropped.
 > doesn't reconcile, or a format you need is missing, please
 > [open an issue](https://github.com/fabiocampolim-design/claude-session-publisher/issues).
 
-**Why this exists.** In August 2026 a Claude Desktop reinstall — advised by
-support after a plan-upgrade failure — deleted my local agent sessions, and
-the account data export turned out not to include them. Whole projects, gone
-for good. The lesson became this tool's motto: **archive early, archive
-often** — an archive only exists if you make it while the files still do.
+**Why this exists.** AI-assisted research needs the same standard of record
+as any other method: when a result was reached in conversation with a model,
+the transparency and reproducibility of the science depend on being able to
+cite and audit that conversation — verbatim, complete, and in a form a paper
+can reference. That is what this tool is for. *But* building it also taught
+us that the records themselves are fragile: in August 2026 a Claude Desktop
+reinstall — advised by support after a plan-upgrade failure — deleted my
+local agent sessions, and the account data export turned out not to include
+them. Whole projects, gone for good. So the tool is of wider interest than
+science: anyone whose conversations matter should hold their own copy.
+The motto: **archive early, archive often** — an archive only exists if you
+make it while the files still do.
 
 Claude Code writes every session to a JSON Lines file under
 `~/.claude/projects/`. That file is complete but unreadable: interleaved
