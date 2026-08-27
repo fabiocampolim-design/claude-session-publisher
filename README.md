@@ -15,6 +15,12 @@ dropped.
 > doesn't reconcile, or a format you need is missing, please
 > [open an issue](https://github.com/fabiocampolim-design/claude-session-publisher/issues).
 
+**Why this exists.** In August 2026 a Claude Desktop reinstall — advised by
+support after a plan-upgrade failure — deleted my local agent sessions, and
+the account data export turned out not to include them. Whole projects, gone
+for good. The lesson became this tool's motto: **archive early, archive
+often** — an archive only exists if you make it while the files still do.
+
 Claude Code writes every session to a JSON Lines file under
 `~/.claude/projects/`. That file is complete but unreadable: interleaved
 records, tool payloads, harness bookkeeping. This script parses every record
@@ -153,9 +159,8 @@ it can archive is decided by where a session's transcript lives:
 Two hard-won facts from validating against a real account (August 2026): the
 claude.ai data export contains **standalone chats only** — conversations
 inside claude.ai Projects and Claude Desktop cowork sessions are not in it —
-and the local cowork store does **not** survive an app reinstall. The
-practical consequence: an archive only exists if you make it while the files
-do. Archive early, archive often.
+and the local cowork store does **not** survive an app reinstall — see *Why
+this exists* at the top.
 
 ## Try it
 
