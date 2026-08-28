@@ -245,7 +245,7 @@ try:
             doc.close()
 
     # ----------------------------------------------------------------------
-    # a5b13e25 carries UTF-16LE tool output captured byte-wise: 1,701 NUL bytes
+    # A real session once carried UTF-16LE tool output captured byte-wise: 1,701 NUL bytes
     # interleaved between letters, plus backspaces. XeLaTeX halts on those with
     # "Text line contains an invalid character"; a browser ignores them.
     print("\n[4b] Control bytes never reach the LaTeX source")
@@ -623,8 +623,6 @@ try:
             check("assistant markdown passes through",
                   "| lattice constant | 3.61" in md, "table not live")
             # the code fence inside assistant prose must survive fencing logic
-            check("fences around pastes exceed inner backtick runs",
-                  "````" not in md.split("```python")[0] or True)
             check("fidelity numbers present and consistent",
                   fidelity_numbers(md) is not None, "no fidelity numbers")
             check("subagent transcript included in markdown",
@@ -864,6 +862,257 @@ try:
                   "image not embedded")
         finally:
             shutil.rmtree(tmp12, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # 2026-08-28 review: every finding below got a failing check first.
+        print("\n[21] Markdown edge cases: numeric prose, long fences, autolinks")
+        h = ta.md_to_html("2024. was a good year\nnext line")
+        check("a paragraph opening with a year is not an ordered list",
+              "<ol>" not in h and "2024. was a good year" in h, h)
+        h = ta.md_to_html("1. one\n2. two")
+        check("a real numbered list still renders as <ol>", "<ol>" in h, h)
+        h = ta.md_to_html("````\ncode with ``` inside\n````\nafter")
+        check("a four-backtick fence carries no phantom language",
+              "data-lang" not in h and "```" in h and "<p>after</p>" in h, h)
+        h = ta.md_to_html("````python\nx = 1\n````")
+        check("a four-backtick fence keeps its real language",
+              'data-lang="python"' in h, h)
+        hh = ta.human_html("see http://x.com/a&b's page")
+        check("autolink stops before an apostrophe (escaping after linking)",
+              'href="http://x.com/a&amp;b"' in hh and "&#x27;s page" in hh, hh)
+
+        # ------------------------------------------------------------------
+        print("\n[22] Pasted-image media type is escaped in the HTML")
+        t21 = ta.Transcript()
+        t21.turns = [{"kind": "user_image", "ts": None,
+                      "media": 'image/png" onerror="x', "data": "AAAA"}]
+        units21, _ = ta.render_turns(t21)
+        check("hostile media_type cannot break out of the src attribute",
+              '" onerror="' not in units21[0][0] and "&quot;" in units21[0][0],
+              units21[0][0][:200])
+
+        # ------------------------------------------------------------------
+        print("\n[23] Index version check and imported archives")
+        tmp13 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test23-"))
+        try:
+            arch = tmp13 / "arch"
+            arch.mkdir()
+            (arch / f"{SAMPLE}_x.html").write_text(
+                '<script type="application/json" id="archive-meta">'
+                f'{{"session_id": "{SAMPLE}", "archiver_version": "3.0", '
+                '"title": "future", "records": 1}</script>', encoding="utf-8")
+            (arch / "abcd1234_imported.html").write_text(
+                '<script type="application/json" id="archive-meta">'
+                '{"session_id": "abcd1234-0000-4000-8000-000000000000", '
+                f'"archiver_version": "{ta.VERSION}", "title": "IMPORTED-TITLE", '
+                '"records": 5, "source_kind": "claude.ai", '
+                '"started": "2026-01-01T00:00:00+00:00", '
+                '"last_record": "2026-01-01T01:00:00+00:00"}</script>',
+                encoding="utf-8")
+            ta.build_index(arch, ROOT, arch / "index.html")
+            idx = (arch / "index.html").read_text(encoding="utf-8", errors="replace")
+            check("a 3.x archive is not flagged as legacy v1",
+                  "legacy v1" not in idx, "legacy pill present")
+            check("an imported claude.ai archive is listed in the index",
+                  "IMPORTED-TITLE" in idx, "import missing from index")
+        finally:
+            shutil.rmtree(tmp13, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        print("\n[24] CLI validation, --out stem, --version, --help")
+        tmp14 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test24-"))
+        try:
+            p = subprocess.run([sys.executable, str(SCRIPT), SAMPLE, "--watch", "30",
+                                "--projects-root", str(ROOT), "--archive-dir", str(tmp14)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("--watch without --index is rejected",
+                  p.returncode != 0 and "--index" in p.stderr, p.stderr[-200:])
+            p = subprocess.run([sys.executable, str(SCRIPT), SAMPLE, "--conversation", "x",
+                                "--projects-root", str(ROOT), "--archive-dir", str(tmp14)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("--conversation without --import-claude-ai is rejected",
+                  p.returncode != 0 and "--import-claude-ai" in p.stderr, p.stderr[-200:])
+            p = run(SAMPLE, "html,pdf", tmp14, extra=("--fragment",))
+            check("--fragment with pdf is rejected before anything is written",
+                  p.returncode != 0 and not list(tmp14.glob("*.html")),
+                  f"rc={p.returncode} files={[f.name for f in tmp14.iterdir()]}")
+            p = run(SAMPLE, "html", tmp14, extra=("--out", str(tmp14 / "stem.txt")))
+            check("--out is treated as a stem: html lands in stem.html",
+                  (tmp14 / "stem.html").exists() and not (tmp14 / "stem.txt").exists(),
+                  str([f.name for f in tmp14.iterdir()]))
+            p = subprocess.run([sys.executable, str(SCRIPT), "--version"],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("--version prints the archiver version",
+                  p.returncode == 0 and ta.VERSION in p.stdout, p.stdout + p.stderr)
+            p = subprocess.run([sys.executable, str(SCRIPT), "--help"],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("--help describes the current tool, not the v1 changelog",
+                  "Markdown" in p.stdout and "vs v1" not in p.stdout
+                  and "four formats" not in p.stdout, p.stdout[:300])
+            check("--help carries no personal archive path",
+                  "CLAUDE_CONVERSATIONS" not in p.stdout, "personal default path")
+        finally:
+            shutil.rmtree(tmp14, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        print("\n[25] A human prompt in list content keeps its P tag")
+        tmp15 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25-"))
+        try:
+            src = tmp15 / "s.jsonl"
+            src.write_text(json.dumps({
+                "type": "user", "uuid": "l-1", "timestamp": "2026-02-01T10:00:00Z",
+                "promptSource": "typed", "origin": {"kind": "human"},
+                "message": {"role": "user", "content": [
+                    {"type": "text", "text": "HUMAN-LIST-MARKER hello"},
+                    {"type": "image", "source": {"type": "base64",
+                                                 "media_type": "image/png", "data": "AAAA"}}]}})
+                + "\n", encoding="utf-8")
+            t25 = ta.parse_transcript(src, 4000)
+            check("typed text beside an image is a human turn, not injected",
+                  any(x["kind"] == "human" and "HUMAN-LIST-MARKER" in x["text"]
+                      for x in t25.turns), str([x["kind"] for x in t25.turns]))
+        finally:
+            shutil.rmtree(tmp15, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # Found by the 2026-08-28 survival run on a 5,693-record session:
+        # worktree bookkeeping records Claude Code started writing in 2.1.x.
+        # They carry no transcript content and must be classed as metadata,
+        # not reported as "unhandled".
+        print("\n[25b] Worktree bookkeeping records are metadata, not unhandled")
+        tmp15b = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25b-"))
+        try:
+            src = tmp15b / "w.jsonl"
+            src.write_text("\n".join(json.dumps(r) for r in (
+                {"type": "atis-latch", "atis": "", "sessionId": "w"},
+                {"type": "relocated", "sessionId": "w", "relocatedCwd": "/tmp/x"},
+                {"type": "worktree-state", "sessionId": "w",
+                 "worktreeSession": {"worktreeName": "slice"}})) + "\n", encoding="utf-8")
+            t25b = ta.parse_transcript(src, 4000)
+            check("worktree record types are counted as metadata",
+                  not any("unhandled" in k for k in t25b.counted_only)
+                  and sum(v for k, v in t25b.counted_only.items() if k.startswith("metadata:")) == 3,
+                  str(dict(t25b.counted_only)))
+        finally:
+            shutil.rmtree(tmp15b, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        print("\n[26] Subagents of the requested session survive chain resolution")
+        tmp16 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test26-"))
+        try:
+            proj = tmp16 / "projects" / "p"
+            proj.mkdir(parents=True)
+            BASE_ID = "aaaaaaaa-0000-4000-8000-000000000001"
+            CONT_ID = "bbbbbbbb-0000-4000-8000-000000000002"
+            base_recs = [{"type": "user", "uuid": f"u{i}", "sessionId": BASE_ID,
+                          "timestamp": f"2026-02-01T10:00:{i:02d}Z", "promptSource": "typed",
+                          "origin": {"kind": "human"},
+                          "message": {"role": "user", "content": f"prompt {i}"}}
+                         for i in range(10)]
+            cont_recs = base_recs + [{"type": "user", "uuid": f"c{i}", "sessionId": CONT_ID,
+                                      "timestamp": f"2026-02-01T11:00:{i:02d}Z",
+                                      "promptSource": "typed", "origin": {"kind": "human"},
+                                      "message": {"role": "user", "content": f"later {i}"}}
+                                     for i in range(5)]
+            (proj / f"{BASE_ID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in base_recs) + "\n", encoding="utf-8")
+            (proj / f"{CONT_ID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in cont_recs) + "\n", encoding="utf-8")
+            agd = proj / BASE_ID / "subagents"
+            agd.mkdir(parents=True)
+            (agd / "agent-0000000000000abc.jsonl").write_text(json.dumps({
+                "type": "assistant", "uuid": "ag-1", "timestamp": "2026-02-01T10:30:00Z",
+                "requestId": "r-ag", "message": {"role": "assistant", "model": "claude-sonnet-5",
+                "content": [{"type": "text", "text": "CHAINED-SUBAGENT-MARKER"}],
+                "usage": {"input_tokens": 1, "output_tokens": 1}}}) + "\n", encoding="utf-8")
+            out16 = tmp16 / "out"
+            p = subprocess.run([sys.executable, str(SCRIPT), BASE_ID, "--format", "html",
+                                "--projects-root", str(tmp16 / "projects"),
+                                "--archive-dir", str(out16)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("chained export exits 0", p.returncode == 0, p.stderr[-300:])
+            body = "".join(f.read_text(encoding="utf-8", errors="replace")
+                           for f in out16.glob("*.html")) if out16.exists() else ""
+            check("the continuation is archived", "later 4" in body, "continuation missing")
+            check("subagents filed under the earlier id are rendered",
+                  "CHAINED-SUBAGENT-MARKER" in body, "subagent lost across the chain")
+        finally:
+            shutil.rmtree(tmp16, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        print("\n[27] Logging: audit log per run, --quiet, --log-dir")
+        tmp17 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test27-"))
+        try:
+            p = run(SAMPLE, "html", tmp17, extra=("--quiet",))
+            check("--quiet export exits 0", p.returncode == 0, p.stderr[-300:])
+            check("--quiet prints nothing on stdout", p.stdout.strip() == "", p.stdout[:200])
+            logs = list((tmp17 / "logs").glob("*.log")) if (tmp17 / "logs").exists() else []
+            check("an audit log is written under <archive-dir>/logs/", len(logs) == 1,
+                  str([f.name for f in logs]))
+            if logs:
+                lg = logs[0].read_text(encoding="utf-8", errors="replace")
+                check("audit log records the command line and version",
+                      "--quiet" in lg and ta.VERSION in lg, lg[:300])
+                check("audit log records the outcome", "outcome" in lg.lower(), lg[-300:])
+            alt = tmp17 / "elsewhere"
+            p = run(SAMPLE, "text", tmp17, extra=("--log-dir", str(alt)))
+            check("--log-dir relocates the audit log",
+                  alt.exists() and len(list(alt.glob("*.log"))) == 1,
+                  str(list(alt.glob("*")) if alt.exists() else "no dir"))
+            p = run(SAMPLE, "text", tmp17, extra=("--verbose",))
+            check("--verbose exits 0 and says more than the default",
+                  p.returncode == 0 and len(p.stdout) > 0, p.stderr[-200:])
+        finally:
+            shutil.rmtree(tmp17, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        print("\n[28] HTML page: theme toggle and turn search")
+        tmp18 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test28-"))
+        try:
+            p = run(SAMPLE, "html", tmp18)
+            page = next(iter(tmp18.glob("*.html"))).read_text(encoding="utf-8",
+                                                               errors="replace")
+            check("page has a theme toggle", 'id="theme-toggle"' in page, "no toggle")
+            js = page.split("<script>")[-1]
+            check("toggle sets data-theme on the root element",
+                  "data-theme" in js and "theme-toggle" in js, "no theme JS")
+            check("page has a turn search box", 'id="search"' in page, "no search box")
+            check("search JS filters turns by content",
+                  "getElementById('search')" in js and ".turn" in js, "no search JS")
+        finally:
+            shutil.rmtree(tmp18, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        print("\n[29] Documentation set and its consistency with the CLI")
+        REPO = HERE.parent
+        for rel in ("AGENTS.md", "CHANGELOG.md", "docs/USER_MANUAL.md",
+                    "docs/USER_MANUAL.html", "docs/USER_MANUAL.pdf", "docs/build_manual.py"):
+            check(f"{rel} exists", (REPO / rel).exists(), "missing")
+        for rel in ("AGENTS.md", "CHANGELOG.md", "docs/USER_MANUAL.md"):
+            check(f"{rel} is not swallowed by .gitignore",
+                  subprocess.run(["git", "check-ignore", "-q", rel],
+                                 cwd=str(REPO)).returncode != 0, "ignored")
+        readme = (REPO / "README.md").read_text(encoding="utf-8", errors="replace")
+        manual = (REPO / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8", errors="replace") \
+            if (REPO / "docs" / "USER_MANUAL.md").exists() else ""
+        agents = (REPO / "AGENTS.md").read_text(encoding="utf-8", errors="replace") \
+            if (REPO / "AGENTS.md").exists() else ""
+        flags = sorted(o for a in ta.build_parser()._actions for o in a.option_strings
+                       if o.startswith("--")) if hasattr(ta, "build_parser") else []
+        check("the parser is exposed for doc checks", bool(flags), "no build_parser()")
+        missing_m = [f for f in flags if f not in manual]
+        missing_a = [f for f in flags if f not in agents]
+        check("USER_MANUAL documents every CLI flag", bool(flags) and not missing_m, str(missing_m))
+        check("AGENTS.md documents every CLI flag", bool(flags) and not missing_a, str(missing_a))
+        check("README no longer says 'scribe'", "scribe" not in readme.lower(), "found")
+        check("README opening names Markdown among the formats",
+              "Markdown" in "\n".join(readme.splitlines()[:14]), "not in opening")
+        check("README no longer says 'All four'", "All four" not in readme, "found")
+        check("README links the manual and AGENTS.md",
+              "USER_MANUAL" in readme and "AGENTS.md" in readme, "links missing")
+        changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8", errors="replace") \
+            if (REPO / "CHANGELOG.md").exists() else ""
+        check("CHANGELOG names the current version", ta.VERSION in changelog, "version missing")
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:
@@ -874,3 +1123,10 @@ if FAILURES:
     print("FAILED: " + ", ".join(FAILURES))
     sys.exit(1)
 print("ALL GREEN")
+
+# The README states the size of this suite; the number must not drift.
+_readme = (HERE.parent / "README.md").read_text(encoding="utf-8", errors="replace")
+_m = re.search(r"(\d+) checks", _readme)
+if not _m or int(_m.group(1)) != CHECKS[0]:
+    print(f"FAIL  README states {_m.group(1) if _m else 'no'} checks, suite has {CHECKS[0]}")
+    sys.exit(1)

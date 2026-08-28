@@ -7,8 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Turn a Claude Code session into a single self-contained document — HTML, plain
-text, LaTeX or PDF — with a fidelity report proving nothing was silently
-dropped.
+text, Markdown, LaTeX or PDF — with a fidelity report proving nothing was
+silently dropped.
 
 > **Feedback is highly appreciated.** This tool is young and transcripts are
 > wild — if a session of yours renders oddly, a number in the fidelity report
@@ -40,9 +40,14 @@ Single file, standard library only, no install step.
 
 ```bash
 python transcript_archiver.py <session-id>
-python transcript_archiver.py <session-id> --format html,text,latex,pdf
+python transcript_archiver.py <session-id> --format html,text,markdown,latex,pdf
 python transcript_archiver.py --index          # rebuild the index page
 ```
+
+Full reference: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) (also as
+[HTML](docs/USER_MANUAL.html) and [PDF](docs/USER_MANUAL.pdf)) lists every
+option, output, feature and known limitation. Driving it with an AI agent?
+Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Features
 
@@ -89,7 +94,8 @@ python transcript_archiver.py --index          # rebuild the index page
 - **Honest about thinking** — Claude Code requests thinking with
   `display: "omitted"`, so the archive shows *that* Claude thought at a given
   point and says plainly that the text never reaches the transcript.
-- **Self-contained HTML** — chat-style layout, light and dark themes,
+- **Self-contained HTML** — chat-style layout, light and dark themes with a
+  toggle the browser remembers, a search box that hides non-matching turns,
   filterable table of contents, per-lane toggles, keyboard navigation, no
   external assets. `--paginate N` splits a very large session into pages of N
   turns, with the sidebar contents and subagent links pointing across pages.
@@ -104,7 +110,11 @@ python transcript_archiver.py --index          # rebuild the index page
 - **Survives real transcripts** — NUL bytes from UTF-16 console captures,
   ANSI codes, emoji, 65,000-character lines, unresolved tool calls and
   unparseable lines are all handled, counted, and reported.
-- Standard library only, one file, 65 tests, CI on Linux/Windows.
+- **Every run is on the record** — `--verbose`/`--quiet` for the console, and
+  an audit log per invocation under `<archive-dir>/logs/` (exact command
+  line, versions, every message, outcome), `--log-dir` to move it.
+- Standard library only, one file, 192 checks in the test suite, CI on
+  Linux/Windows.
 
 ## How this compares
 
@@ -124,14 +134,17 @@ document, use this one.
 
 Gaps worth closing:
 
-- **Client-side search across a whole archive.**
+- **Search across a whole archive.** Each page now searches its own turns;
+  searching every archive from the index page is the remaining step.
 - **First-class Linux and macOS support.** CI already runs the suite on
   Linux, but both platforms need real-world verification: cowork-root
   auto-detection, TeX font paths, and archives of sessions produced there.
   Reports from Linux/Mac users are especially welcome.
 
 (Subagent rendering, the Markdown format, cowork discovery, the claude.ai
-importer, and pagination, formerly listed here, shipped.) Two caveats on the
+importer, pagination, and per-page search, formerly listed here, shipped.
+Every feature and every known limitation is listed in one place in the
+[user manual](docs/USER_MANUAL.md).) Two caveats on the
 sources: the cowork directory layout follows Claude Desktop's documented
 structure but was tested against synthetic data, and the claude.ai importer —
 now validated against a real August 2026 export (fidelity report reconciled
@@ -143,16 +156,18 @@ parse differently, project chats especially, remain welcome.
 
 Input is discovered under `--projects-root` (default `~/.claude/projects`)
 and, when the directory exists, `--cowork-root` (auto-detected per platform).
-Output lands in `--archive-dir` (default `~/Desktop/CLAUDE_CONVERSATIONS`):
-each session becomes `<session-id>_<title-slug>.<ext>` there, one file per
-format, and `--index` writes `index.html` into the same directory. To place a
-single archive exactly, `--out path/to/file.html` overrides the full path —
-sibling formats reuse the same stem with their own extension.
+Output lands in `--archive-dir` (default `~/claude-archives`, or the
+`CLAUDE_ARCHIVE_DIR` environment variable): each session becomes
+`<session-id>_<title-slug>.<ext>` there, one file per format (claude.ai
+imports use the conversation's uuid prefix), `--index` writes `index.html`
+into the same directory, and each run leaves an audit log in `logs/`. To
+place a single archive exactly, `--out path/to/report` names the stem —
+every format adds its own extension.
 
 ## Scope
 
-The scribe reads the transcript files Claude Code writes to your disk, so what
-it can archive is decided by where a session's transcript lives:
+The archiver reads the transcript files Claude Code writes to your disk, so
+what it can archive is decided by where a session's transcript lives:
 
 | Claude surface | Archivable? |
 |---|---|
@@ -195,7 +210,7 @@ python transcript_archiver.py 0000c0de-cafe-4000-8000-00000000f00d \
 | `latex` | A standalone XeLaTeX document, or with `--fragment` a body you can `\input` into your own paper. |
 | `pdf` | The LaTeX compiled with `xelatex` (two passes, for the table of contents). |
 
-All four render from the same parsed transcript, so a turn cannot appear in one
+All five render from the same parsed transcript, so a turn cannot appear in one
 format and vanish from another, and each states in its own header what its
 medium cannot carry.
 
@@ -256,10 +271,12 @@ records, and each is now covered by a test:
 python tests/test_archiver.py
 ```
 
-65 checks, run against the synthetic session in `examples/` — self-contained,
-no real transcript needed. The LaTeX/PDF compile checks are skipped (not
-failed) when no TeX installation is on `PATH`; everything else needs only
-Python. To exercise it on a large messy conversation of your own:
+192 checks, run against the synthetic sessions in `examples/` —
+self-contained, no real transcript needed. The LaTeX/PDF compile checks are
+skipped (not failed) when no TeX installation is on `PATH`; everything else
+needs only Python. The suite also verifies that the user manual and
+`AGENTS.md` document every CLI flag and that the check count stated here is
+current. To exercise it on a large messy conversation of your own:
 
 ```bash
 CLAUDE_PROJECTS=~/.claude/projects SAMPLE_SESSION=<id> python tests/test_archiver.py
@@ -306,7 +323,7 @@ scientific papers use):
 | **Conceptualization** | The premise — a full-fidelity, self-contained record of an AI-assisted session, fit for scientific reporting — and most feature ideas: P/R citation tags, the tool-output switch, the live-activity index, pagination | The render/fold/count reconciliation model that became the fidelity report |
 | **Methodology** | The priority order (content fidelity first, then sources, then formats); the academic-publishing requirements that shaped the LaTeX fragment | Chain resolution by uuid-set comparison; per-`requestId` usage dedup; the verbatim-human-turn rule |
 | **Software** | — | All of it |
-| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*) | The 145-check test suite and CI |
+| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*) | The 192-check test suite and CI |
 | **Investigation** | Directed the survey of neighbouring tools | Code and documentation analysis for the comparison section |
 | **Data curation** | — | The synthetic sample and the showcase conversation, built to carry exactly the cases that had broken on real data |
 | **Visualization** | The chat layout (human right, Claude left), box styling, tag and timestamp placement | The HTML/CSS realising it |

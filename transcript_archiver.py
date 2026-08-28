@@ -1,55 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-transcript_archiver.py (v2) -- turn a Claude Code session into a single
-self-contained HTML transcript, without silently dropping anything.
+transcript_archiver.py -- turn a Claude conversation into a self-contained
+document (HTML, plain text, Markdown, LaTeX or PDF) with a fidelity report
+proving nothing was silently dropped.
 
-v2 rewrote the extraction layer. v1 rendered four kinds of thing (human /
-assistant text / tool call / a couple of recognised "system" strings) and threw
-away everything else; the counters it printed in the sidebar were wrong and it
-could not tell one conversation from its own continuation. This version parses
-every record type in the .jsonl into a typed model, decides per class whether to
-render / collapse / count, and then prints a fidelity report so the difference
-between "not in the transcript" and "not in the source" is always visible.
+Every record in the source .jsonl is parsed into a typed model and either
+rendered, folded into an earlier turn, or counted -- and the three numbers are
+reconciled against the source record count on the page itself.
 
 USAGE
     python transcript_archiver.py <session-id> [--title "..."] [options]
-    python transcript_archiver.py <id> --format html,text,latex,pdf
+    python transcript_archiver.py <id> --format html,text,markdown,latex,pdf
     python transcript_archiver.py <id> --format latex --fragment   # body only
-    python transcript_archiver.py --index            # rebuild the index page
+    python transcript_archiver.py --import-claude-ai conversations.json
+    python transcript_archiver.py --index [--watch 300]
+
+SOURCES
+    Claude Code sessions (~/.claude/projects), Claude Desktop cowork sessions
+    (--cowork-root, auto-detected) and claude.ai data exports
+    (--import-claude-ai), all through one pipeline.
 
 FORMATS
-    All four render from the same parsed transcript, so a turn cannot appear in
-    one and vanish from another, and each states in its own header what its
-    medium cannot carry. pdf is the LaTeX compiled by xelatex (two passes, for
-    the TOC); --fragment drops the preamble so the body can be included in
-    another document with LaTeX's own input command. Tool I/O is included in full, which is expensive: a
-    636-record session becomes a 643-page PDF in about four minutes.
+    All five render from the same parsed transcript, so a turn cannot appear in
+    one format and vanish from another. pdf is the LaTeX compiled by xelatex;
+    --fragment emits an engine-neutral body for \\input into your own paper.
+    --tool-output on|off is independent of the format: full tool I/O turns a
+    large session into a several-hundred-page document.
 
-WHAT CHANGED vs v1 (each of these was a real defect, not a nicety)
-  * thinking blocks are rendered (v1 dropped 100% of them -- 895 across the
-    five archives that existed when this was written)
-  * `type: "system"` records (turn_duration / local_command / bridge_status /
-    scheduled_task_fire / compact_boundary) are parsed; durations come from
-    turn_duration.durationMs instead of a 20-minute-gap guess
-  * `type: "attachment"` records (hook output, skill listings, injected files,
-    memory, tool/agent deltas, truncation notices) are rendered in a collapsed
-    harness lane instead of vanishing; pure-noise subtypes are counted, not shown
-  * human vs injected is read from promptSource/origin, which is authoritative --
-    no text heuristics, and the ScheduleWakeup-continuation gap v1 documented as
-    unfixable is fixed (it also cross-checks against ScheduleWakeup prompts and
-    scheduled_task_fire records for older records that lack the field)
-  * compaction summaries are labelled instead of appearing as a giant human turn
-  * usage is deduped per requestId and split by model, with cache reads, cache
-    writes (5m vs 1h, from usage.cache_creation) and a list-price cost estimate
-  * session-chain resolution: a resumed / bridged conversation lives in more
-    than one .jsonl, so the archiver looks for the most complete file sharing
-    this session's history and says so on the page (--no-follow-chain to opt out)
-  * the fidelity report reconciles records-in vs turns-out, so a future drop is
-    visible on the page rather than discovered by re-parsing the source
+Human turns are reproduced verbatim in every format; every prompt and
+response carries a citable tag (P1.., R1.., subagents A1.P1..). Thinking
+blocks are empty in Claude Code transcripts (display=omitted) and the page
+says so. The summary section is hand-written: pass --summary-file.
 
-The summary section is still hand-written -- it needs judgment about what
-mattered. Pass --summary-file; without it you get a placeholder.
+Full documentation: docs/USER_MANUAL.md (humans) and AGENTS.md (agents).
 """
 
 from __future__ import annotations
@@ -70,7 +54,77 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.3"
+VERSION = "2.4"
+
+# Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
+# the environment overrides the built-in default so a personal location never
+# has to be hard-coded.
+DEFAULT_ARCHIVE_DIR = Path(os.environ.get("CLAUDE_ARCHIVE_DIR")
+                           or (Path.home() / "claude-archives"))
+
+
+# ---------------------------------------------------------------------------
+# Console output and the per-run audit log.
+#   say()    -- normal progress, silenced by --quiet
+#   detail() -- only with --verbose
+#   note()   -- warnings, always shown (stderr)
+# Everything said is also kept for the audit log written at the end of a run.
+# ---------------------------------------------------------------------------
+
+class _Console:
+    def __init__(self):
+        self.verbose = False
+        self.quiet = False
+        self.lines: list[str] = []
+
+    def _keep(self, level: str, msg: str) -> None:
+        stamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.lines.append(f"{stamp} {level:<6} {msg}")
+
+    def say(self, msg: str = "") -> None:
+        self._keep("info", msg)
+        if not self.quiet:
+            print(msg)
+
+    def detail(self, msg: str) -> None:
+        self._keep("detail", msg)
+        if self.verbose and not self.quiet:
+            print(msg)
+
+    def note(self, msg: str) -> None:
+        self._keep("note", msg)
+        print(msg, file=sys.stderr)
+
+
+CON = _Console()
+
+
+def write_audit_log(log_dir: Path, argv: list[str], started: datetime.datetime,
+                    outcome: str, label: str = "run") -> Path | None:
+    """One file per invocation: exact command line, versions, everything the
+    run said, and how it ended. Never lets a logging failure kill the run."""
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        name = f"{started.strftime('%Y%m%d-%H%M%S')}_{slugify(label)[:40]}.log"
+        ended = datetime.datetime.now()
+        body = [
+            f"transcript_archiver v{VERSION}",
+            f"python {sys.version.split()[0]} on {sys.platform}",
+            "command: " + " ".join(argv),
+            f"cwd: {os.getcwd()}",
+            f"started: {started.isoformat(timespec='seconds')}",
+            f"ended:   {ended.isoformat(timespec='seconds')}",
+            "",
+            *CON.lines,
+            "",
+            f"outcome: {outcome}",
+        ]
+        path = log_dir / name
+        path.write_text("\n".join(body) + "\n", encoding="utf-8")
+        return path
+    except OSError as e:
+        print(f"note: could not write audit log: {e}", file=sys.stderr)
+        return None
 
 # ---------------------------------------------------------------------------
 # Pricing (USD per million tokens, public list rates). Cost is an estimate at
@@ -147,6 +201,9 @@ METADATA_RECORD_TYPES = {
     "last-prompt", "mode", "permission-mode", "ai-title", "queue-operation",
     "file-history-snapshot", "file-history-delta", "bridge-session",
     "frame-link", "agent-name", "summary",
+    # worktree bookkeeping (Claude Code 2.1.x): where the session's cwd moved
+    # to and which git worktree it entered -- state, not conversation
+    "worktree-state", "relocated", "atis-latch",
 }
 
 
@@ -166,7 +223,10 @@ def inline_md(s: str) -> str:
     return s
 
 
-_LIST_RE = re.compile(r"^(\s*)([-*+]|\d+[.)])\s+(.*)$")
+# A numbered item is at most three digits: "2024. was a good year" is prose
+# opening with a year, not item 2024 of a list.
+_LIST_RE = re.compile(r"^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$")
+_FENCE_RE = re.compile(r"^(`{3,})\s*(.*)$")
 
 
 def _render_list(items: list[tuple[int, bool, str]], start: int = 0) -> tuple[str, int]:
@@ -224,12 +284,17 @@ def md_tokens(text: str) -> list[tuple]:
         raw = lines[i]
         stripped = raw.strip()
 
-        if stripped.startswith("```"):
+        fence = _FENCE_RE.match(stripped)
+        if fence:
+            # The closing fence must be at least as long as the opening one, so
+            # a ```` block can quote ``` without ending early, and the language
+            # is whatever follows the run -- never a stray backtick.
             flush()
-            lang = stripped[3:].strip()
+            ticks, lang = fence.group(1), fence.group(2).strip()
+            close = re.compile(r"^`{%d,}\s*$" % len(ticks))
             i += 1
             code = []
-            while i < n and not lines[i].strip().startswith("```"):
+            while i < n and not close.match(lines[i].strip()):
                 code.append(lines[i])
                 i += 1
             i += 1
@@ -372,7 +437,15 @@ def looks_columnar(text: str) -> bool:
 
 
 def human_html(text: str) -> str:
-    body = URL_RE.sub(r'<a href="\1" target="_blank" rel="noopener">\1</a>', esc(text))
+    # Link on the raw text and escape each piece afterwards: escaping first
+    # turns a trailing apostrophe into &#x27; and the URL swallows it.
+    parts = []
+    for i, piece in enumerate(URL_RE.split(text)):
+        if i % 2:
+            parts.append(f'<a href="{esc(piece)}" target="_blank" rel="noopener">{esc(piece)}</a>')
+        else:
+            parts.append(esc(piece))
+    body = "".join(parts)
     cls = "raw mono" if looks_columnar(text) else "raw"
     return f'<div class="{cls}">{body}</div>'
 
@@ -904,6 +977,14 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                 continue
 
             if isinstance(content, list):
+                # A text block in list content is normally harness text riding
+                # beside a tool result. Only positive provenance (origin.kind or
+                # promptSource on the record) makes it a human prompt -- the
+                # shape Claude Code uses when text and an image are typed together.
+                origin_kind = (obj.get("origin") or {}).get("kind") \
+                    if isinstance(obj.get("origin"), dict) else None
+                typed_here = (origin_kind == "human"
+                              or obj.get("promptSource") in ("typed", "suggestion_accepted"))
                 for c in content:
                     if not isinstance(c, dict):
                         continue
@@ -911,7 +992,14 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                     t.blocks[f"user:{ctype}"] += 1
                     if ctype == "text":
                         txt = (c.get("text") or "").strip()
-                        if txt:
+                        if txt and typed_here:
+                            evidence = ("origin.kind=human" if origin_kind == "human"
+                                        else f"promptSource={obj.get('promptSource')}")
+                            t.classification[evidence + " (list content)"] += 1
+                            t.turns.append({"kind": "human", "ts": ts, "text": txt,
+                                            "html": human_html(txt)})
+                            t.rendered_types["human turn"] += 1
+                        elif txt:
                             t.turns.append({
                                 "kind": "system", "ts": ts,
                                 "badge": "Instructions injected into the turn",
@@ -1422,7 +1510,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             body.append(f"""
 <section class="turn human-turn" data-lane="human">
   <div class="turn-label"><span class="who">Human</span><span class="badge">pasted image</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
-  <div class="turn-body"><img loading="lazy" src="data:{turn["media"]};base64,{turn["data"]}" alt="pasted image"></div>
+  <div class="turn-body"><img loading="lazy" src="data:{esc(turn["media"])};base64,{esc(turn["data"])}" alt="pasted image"></div>
 </section>""")
 
         elif kind == "harness":
@@ -1469,7 +1557,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             for media, data in turn["output_images"]:
                 io.append(f"""
       <div class="io-block"><div class="io-label">Screenshot</div>
-        <img loading="lazy" src="data:{media};base64,{data}" alt="tool screenshot"></div>""")
+        <img loading="lazy" src="data:{esc(media)};base64,{esc(data)}" alt="tool screenshot"></div>""")
             body.append(f"""
 <section class="turn {classes}" data-lane="tool">
   <details>
@@ -1497,7 +1585,8 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
           projects_root: Path, follow_chain: bool, max_tool_output: int,
           formats: tuple = ("html",), fragment: bool = False,
           tool_output: str = "on", sessions: dict | None = None,
-          subagents: str = "on", paginate: int = 0) -> dict:
+          subagents: str = "on", paginate: int = 0,
+          source_kind: str | None = None) -> dict:
     # scan_sessions reads every .jsonl under the root; the caller usually has
     # the scan already, so reuse it rather than reading them all a second time.
     if sessions is None:
@@ -1509,11 +1598,12 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     chain_best, related = resolve_chain(session_id, sessions)
     used = chain_best if follow_chain else session_id
     if follow_chain and used != requested:
-        print(f"note: {requested} is continued by {used} "
-              f"({len(sessions[used].uuids):,} conversation records vs "
-              f"{len(sessions[requested].uuids):,}); archiving {used}", file=sys.stderr)
+        CON.note(f"note: {requested} is continued by {used} "
+                 f"({len(sessions[used].uuids):,} conversation records vs "
+                 f"{len(sessions[requested].uuids):,}); archiving {used}")
 
     path = sessions[used].path
+    CON.detail(f"parsing {path}")
     t = parse_transcript(path, max_tool_output)
     archived_at = datetime.datetime.now(datetime.timezone.utc)
 
@@ -1523,12 +1613,29 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     # only points at. Parse them all regardless of the --subagents flag: their
     # usage is real spend either way, and the fidelity report must list the
     # files even when their content is not rendered.
+    #
+    # A resumed session's continuation file repeats the records but the
+    # subagent directory stays under the id that spawned them, so look beside
+    # every file in the chain (the archived one, the requested one, and any
+    # earlier/later half), deduplicating by agent id.
     agents: list[tuple[str, Path, Transcript]] = []
-    ag_dir = path.parent / path.stem / "subagents"
-    if ag_dir.is_dir():
+    chain_ids = [used, requested] + [r["session_id"] for r in related
+                                      if r["relation"] in ("superset", "subset")]
+    seen_agents: set[str] = set()
+    for cid in chain_ids:
+        if cid not in sessions:
+            continue
+        cpath = sessions[cid].path
+        ag_dir = cpath.parent / cpath.stem / "subagents"
+        if not ag_dir.is_dir():
+            continue
         for af in sorted(ag_dir.glob("agent-*.jsonl")):
-            agents.append((af.stem[len("agent-"):], af,
-                           parse_transcript(af, max_tool_output)))
+            aid = af.stem[len("agent-"):]
+            if aid in seen_agents:
+                continue
+            seen_agents.add(aid)
+            CON.detail(f"parsing subagent {af}")
+            agents.append((aid, af, parse_transcript(af, max_tool_output)))
     include_agents = subagents == "on"
     assign_tags(t)
     for _k, (_aid2, _af2, _at2) in enumerate(agents, 1):
@@ -1697,6 +1804,7 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         "last_record": ended.isoformat(),
         "archived_at": archived_at.isoformat(),
         "source": str(path),
+        "source_kind": source_kind or sessions[used].source,
         "records": sum(t.record_types.values()),
         "human_turns": t.rendered_types.get("human turn", 0),
         "assistant_messages": t.rendered_types.get("assistant text", 0),
@@ -1794,12 +1902,13 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         q.write_text(src, encoding="utf-8")
         written.append((q, len(src)))
         if tally["glyphs"] or tally["controls"]:
-            print(f"  note: LaTeX rendering dropped {tally['glyphs']:,} unsettable glyphs "
-                  f"and {tally['controls']:,} control bytes (recorded in the document)")
+            CON.say(f"  note: LaTeX rendering dropped {tally['glyphs']:,} unsettable glyphs "
+                    f"and {tally['controls']:,} control bytes (recorded in the document)")
         if "pdf" in formats:
             if fragment:
                 sys.exit("--fragment cannot be compiled: it has no preamble. "
                          "Drop --fragment to build a PDF.")
+            CON.detail(f"compiling {q.name} with xelatex (two passes)")
             pdf = compile_pdf(q)
             written.append((pdf, pdf.stat().st_size))
             if "latex" not in formats:
@@ -1807,21 +1916,28 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                 written = [w for w in written if w[0] != q]
 
     for q, size in written:
-        print(f"wrote {q} ({size / 1e6:.2f} MB)")
-    print(f"  human={t.rendered_types.get('human turn', 0)} "
-          f"assistant={t.rendered_types.get('assistant text', 0)} "
-          f"thinking={t.rendered_types.get('thinking', 0)} "
-          f"tools={t.rendered_types.get('tool call', 0)} "
-          f"harness={sum(v for k, v in t.rendered_types.items() if k.startswith('harness'))} "
-          f"events={sum(v for k, v in t.rendered_types.items() if k.startswith('system'))}")
-    print(f"  records={sum(t.record_types.values())} rendered={sum(t.rendered_types.values())} "
-          f"counted-only={sum(t.counted_only.values())} unresolved-tools={t.unresolved_tools}")
+        CON.say(f"wrote {q} ({size / 1e6:.2f} MB)")
+    CON.say(f"  human={t.rendered_types.get('human turn', 0)} "
+            f"assistant={t.rendered_types.get('assistant text', 0)} "
+            f"thinking={t.rendered_types.get('thinking', 0)} "
+            f"tools={t.rendered_types.get('tool call', 0)} "
+            f"harness={sum(v for k, v in t.rendered_types.items() if k.startswith('harness'))} "
+            f"events={sum(v for k, v in t.rendered_types.items() if k.startswith('system'))}")
+    CON.say(f"  records={sum(t.record_types.values())} rendered={sum(t.rendered_types.values())} "
+            f"counted-only={sum(t.counted_only.values())} unresolved-tools={t.unresolved_tools}")
     if agents:
-        print(f"  subagents={len(agents)} transcript(s), "
-              f"{sum(sum(at.record_types.values()) for _, _, at in agents)} records"
-              + ("" if include_agents else " (not rendered: --subagents off)"))
-    print(f"  output={usage_totals['output']:,} tok  cache-read={usage_totals['cache_read']:,} tok  "
-          f"list-cost=${usage_totals['cost']:,.2f}")
+        CON.say(f"  subagents={len(agents)} transcript(s), "
+                f"{sum(sum(at.record_types.values()) for _, _, at in agents)} records"
+                + ("" if include_agents else " (not rendered: --subagents off)"))
+    CON.say(f"  output={usage_totals['output']:,} tok  cache-read={usage_totals['cache_read']:,} tok  "
+            f"list-cost=${usage_totals['cost']:,.2f}")
+    disp = t.disposition
+    if disp["rendered"] + disp["folded"] + disp["counted"] != sum(t.record_types.values()):
+        CON.note("warning: fidelity report does not reconcile -- a record class is "
+                 "escaping the parser; the page says so")
+    for k, v in t.counted_only.items():
+        if k.startswith("unhandled record type"):
+            CON.note(f"warning: {v} record(s) of an unhandled type were counted, not rendered: {k}")
     return meta
 
 
@@ -2726,6 +2842,15 @@ def load_claude_ai_export(path: Path) -> list[dict]:
 # Index mode
 # ---------------------------------------------------------------------------
 
+def is_legacy_version(v) -> bool:
+    """v1 archives carry no usable metadata; anything from 2.0 on does.
+    Compare the major number, not the first character -- '3.0' is not v1."""
+    try:
+        return int(str(v).split(".")[0]) < 2
+    except (ValueError, TypeError):
+        return True
+
+
 def _age_label(seconds: float) -> str:
     if seconds < 90:
         return "now"
@@ -2797,7 +2922,7 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
             except ValueError:
                 duration = ""
         if meta:
-            legacy = not str(meta.get("archiver_version", "")).startswith("2")
+            legacy = is_legacy_version(meta.get("archiver_version", ""))
             stale = bool(meta.get("last_record") and info.last and meta["last_record"][:19] < info.last[:19])
             if legacy:
                 status = '<span class="pill stale">legacy v1</span>'
@@ -2863,6 +2988,35 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
             f'<div class="muted small">{esc(duration)}</div></td>'
             f'<td class="num" data-k="{esc(info.last or "")}" title="{esc((info.last or "")[:19])} UTC">{esc(last)}</td></tr>')
 
+    # Archives whose source is not a session on disk: claude.ai imports, or
+    # sessions whose transcript has since been deleted. They are still part of
+    # the archive and belong on its index.
+    n_imported = 0
+    for sid, meta in sorted(archived.items(),
+                            key=lambda kv: kv[1].get("last_record") or "", reverse=True):
+        if sid in sessions:
+            continue
+        n_imported += 1
+        kind = meta.get("source_kind") or "source transcript not on disk"
+        link = f'<a href="{esc(meta["file"])}">{esc(meta.get("title") or sid)}</a>'
+        detail = (f'{meta.get("records", "?")} records &middot; {meta["size_mb"]:.1f} MB '
+                  f'&middot; archiver v{esc(str(meta.get("archiver_version")))} '
+                  f'&middot; source: {esc(str(kind))}')
+        title_key = re.sub(r"<[^>]+>", "", link).strip().lower()
+
+        def _loc(iso):
+            try:
+                return fmt_local(parse_ts(iso)) if iso else ""
+            except ValueError:
+                return str(iso)[:19].replace("T", " ")
+        rows.append(
+            f'<tr><td data-k="archived"><span class="pill ok">archived</span></td>'
+            '<td class="activity" data-k="~"></td>'
+            f'<td data-k="{esc(sid)}"><code>{esc(sid[:8])}</code></td>'
+            f'<td data-k="{esc(title_key)}">{link}<div class="muted small">{detail}</div></td>'
+            f'<td class="num" data-k="{esc(meta.get("started") or "")}">{esc(_loc(meta.get("started")))}</td>'
+            f'<td class="num" data-k="{esc(meta.get("last_record") or "")}">{esc(_loc(meta.get("last_record")))}</td></tr>')
+
     counts = Counter()
     for sid in sessions:
         if sid in archived:
@@ -2872,7 +3026,9 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
     page = _INDEX_TEMPLATE.format(
         rows="".join(rows),
         summary=(f"{len(sessions)} sessions on disk &middot; {counts['archived']} archived &middot; "
-                 f"{counts['missing']} not archived directly"),
+                 f"{counts['missing']} not archived directly"
+                 + (f" &middot; {n_imported} archived from imports or deleted sources"
+                    if n_imported else "")),
         generated=esc(fmt_local(datetime.datetime.now(datetime.timezone.utc))),
         refresh_meta=(f'<meta http-equiv="refresh" content="{int(refresh)}">\n'
                       if refresh else ""),
@@ -2881,7 +3037,8 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
         index_js=_INDEX_JS,
     )
     out_path.write_text(page, encoding="utf-8")
-    print(f"wrote {out_path} ({len(sessions)} sessions, {counts['archived']} archived)")
+    CON.say(f"wrote {out_path} ({len(sessions)} sessions, {counts['archived']} archived"
+            + (f", {n_imported} imported" if n_imported else "") + ")")
 
 
 # ---------------------------------------------------------------------------
@@ -2971,7 +3128,8 @@ header.mast{margin-bottom:28px;padding-bottom:18px;border-bottom:1px solid var(-
 header.mast h1{font-size:25px;margin:0 0 6px}
 header.mast p{color:var(--ink-soft);margin:0;font-size:13.5px}
 .turn{margin-bottom:12px}
-.turn.filtered{display:none}
+.turn.filtered,.turn.unmatched{display:none}
+.search-count{font-size:11px;color:var(--ink-faint);min-height:1em}
 .turn-label{display:flex;align-items:center;gap:9px;margin-bottom:5px;font-size:12.5px;flex-wrap:wrap}
 .turn-label .who{font-weight:700;font-family:"Cascadia Code","JetBrains Mono",monospace}
 .rtag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;background:var(--code-bg);
@@ -3105,6 +3263,44 @@ del{opacity:.65}
 
 _JS = """
 (function(){
+  /* Theme: follow the OS unless the reader chose; the choice is remembered
+     per browser in localStorage (wrapped: storage can be unavailable). */
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('theme-toggle');
+  function currentDark(){
+    var t = root.getAttribute('data-theme');
+    if (t) return t === 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function applyTheme(t){
+    if (t) root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
+    if (themeBtn) themeBtn.textContent = currentDark() ? 'Light theme' : 'Dark theme';
+  }
+  try { applyTheme(localStorage.getItem('archive-theme') || ''); } catch (e) { applyTheme(''); }
+  if (themeBtn) themeBtn.addEventListener('click', function(){
+    var next = currentDark() ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem('archive-theme', next); } catch (e) {}
+  });
+
+  /* Turn search: hide every turn whose text does not contain the query.
+     Lead sections (summary, usage, fidelity) always stay. */
+  var search = document.getElementById('search');
+  var count = document.getElementById('search-count');
+  if (search) search.addEventListener('input', function(){
+    var q = search.value.toLowerCase();
+    var shown = 0, total = 0;
+    document.querySelectorAll('.turn').forEach(function(el){
+      if (el.classList.contains('summary-turn') || el.classList.contains('usage-turn')
+          || el.classList.contains('report-turn')) return;
+      total++;
+      var hit = q === '' || el.textContent.toLowerCase().indexOf(q) !== -1;
+      el.classList.toggle('unmatched', !hit);
+      if (hit) shown++;
+    });
+    if (count) count.textContent = q === '' ? '' : shown + ' of ' + total + ' turns match';
+  });
+
   var lanes = ['thinking','tool','harness','system','subagent'];
   lanes.forEach(function(lane){
     var box = document.getElementById('lane-' + lane);
@@ -3163,6 +3359,8 @@ _TEMPLATE = """<!doctype html>
 <div class="layout">
   <nav class="sidebar">
     <div class="controls">
+      <input type="search" id="search" placeholder="Search turns" aria-label="Search turns">
+      <div class="search-count" id="search-count"></div>
       <input type="search" id="filter" placeholder="Filter contents  ( / )" aria-label="Filter contents">
       <div class="toggles">
         <label><input type="checkbox" id="lane-thinking" checked> thinking</label>
@@ -3174,6 +3372,7 @@ _TEMPLATE = """<!doctype html>
       <div class="btnrow">
         <button id="expand-all" type="button">Expand all</button>
         <button id="collapse-all" type="button">Collapse all</button>
+        <button id="theme-toggle" type="button">Dark theme</button>
       </div>
     </div>
     <h2>Session</h2>
@@ -3186,8 +3385,9 @@ _TEMPLATE = """<!doctype html>
       <h1>{title}</h1>
       <p>{subtitle}</p>
       <p class="muted small">Timestamps are local; hover for UTC. <kbd>j</kbd>/<kbd>k</kbd> jump between
-         human turns, <kbd>/</kbd> filters the contents list. Thinking, tool I/O and harness events are
-         collapsed &mdash; use the toggles to hide a lane entirely.</p>
+         human turns, <kbd>/</kbd> filters the contents list, the search box hides turns that do not
+         match. Thinking, tool I/O and harness events are collapsed &mdash; use the toggles to hide a
+         lane entirely.</p>
     </header>
     {page_nav}
     {lead_html}
@@ -3306,20 +3506,40 @@ def slugify(title: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")[:60] or "session"
 
 
-def main() -> None:
+_KNOWN_EXT = {".html", ".htm", ".txt", ".md", ".tex", ".pdf"}
+
+
+def out_stem(arg: str) -> Path:
+    """--out names the output *stem*: each format adds its own extension.
+
+    'report.pdf' and 'report' both mean report.html / report.txt / ...; an
+    unfamiliar suffix ('v2.3') is kept as part of the name."""
+    p = Path(arg)
+    if p.suffix.lower() in _KNOWN_EXT:
+        p = p.with_suffix("")
+    return p.with_name(p.name + ".html")
+
+
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("session_id", nargs="?", help="transcript UUID (the .jsonl filename)")
+    ap.add_argument("--version", action="version", version=f"transcript_archiver {VERSION}")
     ap.add_argument("--title", default=None, help="page title; defaults to the session's own ai-title")
-    ap.add_argument("--out", default=None)
+    ap.add_argument("--out", default=None,
+                    help="output path stem for a single archive (each format adds its "
+                         "own extension); overrides --archive-dir naming")
     ap.add_argument("--summary-file", default=None,
                     help="HTML fragment (h3/ul blocks) rendered as the session summary")
-    ap.add_argument("--projects-root", default=str(Path.home() / ".claude" / "projects"))
+    ap.add_argument("--projects-root", default=str(Path.home() / ".claude" / "projects"),
+                    help="where Claude Code writes sessions (default: ~/.claude/projects)")
     ap.add_argument("--cowork-root", default=str(default_cowork_root()),
                     help="base directory of Claude Desktop cowork (local agent mode) "
                          "sessions, merged into discovery when it exists; pass an "
                          "empty string to disable")
-    ap.add_argument("--archive-dir", default=str(Path.home() / "Desktop" / "CLAUDE_CONVERSATIONS"))
+    ap.add_argument("--archive-dir", default=str(DEFAULT_ARCHIVE_DIR),
+                    help="where archives and index.html go (default: $CLAUDE_ARCHIVE_DIR "
+                         "or ~/claude-archives)")
     ap.add_argument("--no-follow-chain", action="store_true",
                     help="archive exactly the id given, even if a more complete continuation exists")
     ap.add_argument("--max-tool-output", type=int, default=16384,
@@ -3334,7 +3554,8 @@ def main() -> None:
                          "which is usually what you want for latex and pdf: full I/O turns "
                          "a large session into a several-hundred-page document")
     ap.add_argument("--fragment", action="store_true",
-                    help="LaTeX body only, no preamble -- ready to \\input into another document")
+                    help="LaTeX body only, no preamble -- ready to \\input into another "
+                         "document (requires --format latex)")
     ap.add_argument("--paginate", type=int, default=0, metavar="N",
                     help="split the HTML into pages of N turns (0 = single page). "
                          "Page 1 keeps the summary, usage and fidelity sections; "
@@ -3359,17 +3580,77 @@ def main() -> None:
     ap.add_argument("--list-conversations", action="store_true",
                     help="with --import-claude-ai: list the export's conversations "
                          "and exit")
-    args = ap.parse_args()
+    ap.add_argument("--verbose", action="store_true",
+                    help="print per-step detail (files parsed, compile passes)")
+    ap.add_argument("--quiet", action="store_true",
+                    help="print nothing but warnings; the audit log still records everything")
+    ap.add_argument("--log-dir", default=None,
+                    help="where the per-run audit log goes (default: <archive-dir>/logs)")
+    return ap
+
+
+def _validate(ap: argparse.ArgumentParser, args: argparse.Namespace, formats: tuple) -> None:
+    """Reject option combinations that would otherwise be silently ignored."""
+    if args.watch is not None and not args.index:
+        ap.error("--watch only makes sense with --index")
+    if (args.conversation or args.list_conversations) and not args.import_claude_ai:
+        ap.error("--conversation and --list-conversations require --import-claude-ai")
+    if args.fragment and "pdf" in formats:
+        ap.error("--fragment cannot be compiled (it has no preamble); "
+                 "use --format latex, or drop --fragment for a PDF")
+    if args.fragment and "latex" not in formats:
+        ap.error("--fragment applies to --format latex")
+    if args.verbose and args.quiet:
+        ap.error("--verbose and --quiet are mutually exclusive")
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = build_parser()
+    args = ap.parse_args(argv)
+    CON.verbose, CON.quiet = args.verbose, args.quiet
 
     projects_root = Path(args.projects_root)
     cowork_root = Path(args.cowork_root) if args.cowork_root else None
     archive_dir = Path(args.archive_dir)
+    log_dir = Path(args.log_dir) if args.log_dir else archive_dir / "logs"
+    run_started = datetime.datetime.now()
+    label = args.session_id or ("index" if args.index else "import")
 
+    formats = tuple("markdown" if f.strip().lower() == "md" else f.strip().lower()
+                    for f in args.format.split(",") if f.strip())
+    unknown = [f for f in formats
+               if f not in ("html", "text", "markdown", "latex", "pdf")]
+    if unknown:
+        ap.error(f"unknown --format value(s): {', '.join(unknown)} "
+                 "(choose from html, text, markdown, latex, pdf)")
+    _validate(ap, args, formats)
+
+    outcome = "ok"
+    try:
+        _run(args, ap, projects_root, cowork_root, archive_dir, formats)
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            outcome = f"failed: {e.code}"
+            CON.note(str(e.code)) if isinstance(e.code, str) else None
+        raise
+    except KeyboardInterrupt:
+        outcome = "interrupted"
+        raise
+    except Exception as e:
+        outcome = f"crashed: {type(e).__name__}: {e}"
+        raise
+    finally:
+        path = write_audit_log(log_dir, sys.argv, run_started, outcome, label)
+        if path:
+            CON.detail(f"audit log: {path}")
+
+
+def _run(args, ap, projects_root: Path, cowork_root, archive_dir: Path, formats: tuple) -> None:
     if args.index:
         if args.watch:
             import time
             period = max(30, args.watch)
-            print(f"watching: regenerating the index every {period}s (Ctrl+C to stop)")
+            CON.say(f"watching: regenerating the index every {period}s (Ctrl+C to stop)")
             try:
                 while True:
                     build_index(archive_dir, projects_root, archive_dir / "index.html",
@@ -3382,14 +3663,6 @@ def main() -> None:
                     sessions=scan_all_sessions(projects_root, cowork_root))
         return
 
-    formats = tuple("markdown" if f.strip().lower() == "md" else f.strip().lower()
-                    for f in args.format.split(",") if f.strip())
-    unknown = [f for f in formats
-               if f not in ("html", "text", "markdown", "latex", "pdf")]
-    if unknown:
-        ap.error(f"unknown --format value(s): {', '.join(unknown)} "
-                 "(choose from html, text, markdown, latex, pdf)")
-
     if args.import_claude_ai:
         convs = load_claude_ai_export(Path(args.import_claude_ai))
         if args.conversation:
@@ -3399,12 +3672,12 @@ def main() -> None:
                      or q in (c.get("uuid") or "").lower()]
         if args.list_conversations or not convs:
             if not convs:
-                print("no conversation matches; the export contains:")
+                CON.say("no conversation matches; the export contains:")
             for c in load_claude_ai_export(Path(args.import_claude_ai)):
-                print(f"  {(c.get('uuid') or '?')[:8]}  "
-                      f"{(c.get('created_at') or '')[:10]}  "
-                      f"{len(c.get('chat_messages') or []):4d} msgs  "
-                      f"{c.get('name') or '(untitled)'}")
+                CON.say(f"  {(c.get('uuid') or '?')[:8]}  "
+                        f"{(c.get('created_at') or '')[:10]}  "
+                        f"{len(c.get('chat_messages') or []):4d} msgs  "
+                        f"{c.get('name') or '(untitled)'}")
             if not args.list_conversations and not convs:
                 sys.exit(1)
             return
@@ -3425,22 +3698,25 @@ def main() -> None:
             for c in convs:
                 sid = c.get("uuid") or "claude-ai-import"
                 title = args.title or c.get("name") or sid
-                out = (Path(args.out) if args.out and len(convs) == 1 else
+                out = (out_stem(args.out) if args.out and len(convs) == 1 else
                        archive_dir / f"{sid[:8]}_{slugify(title)}.html")
                 build(sid, title, out, summary_inner, troot,
                       follow_chain=False,
                       max_tool_output=0 if args.full else args.max_tool_output,
                       formats=formats, fragment=args.fragment,
                       tool_output=args.tool_output, subagents=args.subagents,
-                      paginate=args.paginate)
+                      paginate=args.paginate, source_kind="claude.ai")
         return
 
     if not args.session_id:
         ap.error("a session id is required (or use --index or --import-claude-ai)")
 
     sessions = scan_all_sessions(projects_root, cowork_root)
+    CON.detail(f"{len(sessions)} sessions found under {projects_root}"
+               + (f" and {cowork_root}" if cowork_root and cowork_root.is_dir() else ""))
     if args.session_id not in sessions:
-        sys.exit(f"No {args.session_id}.jsonl under {projects_root}")
+        sys.exit(f"No {args.session_id}.jsonl under {projects_root}"
+                 + (f" or {cowork_root}" if cowork_root and cowork_root.is_dir() else ""))
     title = args.title or sessions[args.session_id].title or args.session_id
 
     if args.summary_file:
@@ -3456,7 +3732,7 @@ def main() -> None:
     naming_id = args.session_id
     if not args.no_follow_chain:
         naming_id, _ = resolve_chain(args.session_id, sessions)
-    out_path = Path(args.out) if args.out else (
+    out_path = out_stem(args.out) if args.out else (
         archive_dir / f"{naming_id}_{slugify(title)}.html")
 
     build(args.session_id, title, out_path, summary_inner, projects_root,

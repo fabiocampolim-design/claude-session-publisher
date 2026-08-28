@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10.2" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>claude-session-publisher — User Manual</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+  <style type="text/css">body{font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#22221f;background:#faf7f0}h1{font-size:1.6rem;border-bottom:1px solid #999;padding-bottom:.2rem;margin-top:2rem}h2{font-size:1.25rem;margin-top:1.6rem}table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border:1px solid #bbb;padding:.3rem .5rem;text-align:left;vertical-align:top}th{background:#eeebe2}pre,code{font-family:ui-monospace,Consolas,monospace;font-size:.86rem}pre{background:#eeebe2;padding:.6rem;overflow-x:auto}@media(prefers-color-scheme:dark){body{color:#e9e6dc;background:#14140f}th,pre{background:#201e17}}</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">claude-session-publisher — User Manual</h1>
+<p class="subtitle">transcript_archiver.py v2.4</p>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#claude-session-publisher-user-manual" id="toc-claude-session-publisher-user-manual">claude-session-publisher —
+User Manual</a>
+<ul>
+<li><a href="#quick-start" id="toc-quick-start">1. Quick start</a></li>
+<li><a href="#sources" id="toc-sources">2. Sources</a></li>
+<li><a href="#command-line-reference" id="toc-command-line-reference">3.
+Command-line reference</a>
+<ul>
+<li><a href="#positional" id="toc-positional">Positional</a></li>
+<li><a href="#discovery-and-placement" id="toc-discovery-and-placement">Discovery and placement</a></li>
+<li><a href="#content" id="toc-content">Content</a></li>
+<li><a href="#index" id="toc-index">Index</a></li>
+<li><a href="#claude.ai-import" id="toc-claude.ai-import">claude.ai
+import</a></li>
+<li><a href="#output-control-and-logging" id="toc-output-control-and-logging">Output control and logging</a></li>
+</ul></li>
+<li><a href="#what-is-produced" id="toc-what-is-produced">4. What is
+produced</a>
+<ul>
+<li><a href="#files" id="toc-files">Files</a></li>
+<li><a href="#the-page" id="toc-the-page">The page</a></li>
+<li><a href="#reference-tags" id="toc-reference-tags">Reference
+tags</a></li>
+<li><a href="#fidelity-report" id="toc-fidelity-report">Fidelity
+report</a></li>
+<li><a href="#usage-and-cost" id="toc-usage-and-cost">Usage and
+cost</a></li>
+<li><a href="#the-html-pages-controls" id="toc-the-html-pages-controls">The HTML page’s controls</a></li>
+<li><a href="#the-index" id="toc-the-index">The index</a></li>
+</ul></li>
+<li><a href="#latex-and-pdf" id="toc-latex-and-pdf">5. LaTeX and
+PDF</a></li>
+<li><a href="#logging-and-audit" id="toc-logging-and-audit">6. Logging
+and audit</a></li>
+<li><a href="#known-limitations" id="toc-known-limitations">7. Known
+limitations</a></li>
+<li><a href="#tests" id="toc-tests">8. Tests</a></li>
+<li><a href="#building-this-manual" id="toc-building-this-manual">9.
+Building this manual</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="claude-session-publisher-user-manual">claude-session-publisher —
+User Manual</h1>
+<p><code>transcript_archiver.py</code> turns a Claude conversation into
+a self-contained document — HTML, plain text, Markdown, LaTeX or PDF —
+with a fidelity report that reconciles every source record against what
+the page shows. This manual is the complete reference: every option,
+every output, every feature and every known limitation. The README is
+the product page; <code>AGENTS.md</code> is the same information written
+for an AI agent driving the tool.</p>
+<p>Single file, Python 3.9+, standard library only. No install step:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="at">--version</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="at">--help</span></span></code></pre></div>
+<h2 id="quick-start">1. Quick start</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># archive one Claude Code session to HTML (the default format)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="op">&lt;</span>session-id<span class="op">&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># every format at once</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="op">&lt;</span>session-id<span class="op">&gt;</span> --format html,text,markdown,latex,pdf</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># rebuild the index page of everything on disk</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="at">--index</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># try it on the shipped showcase conversation</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py 0000c0de-cafe-4000-8000-00000000f00d <span class="dt">\</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">--projects-root</span> examples <span class="at">--archive-dir</span> demo <span class="at">--format</span> html,markdown,pdf</span></code></pre></div>
+<p>The session id is the <code>.jsonl</code> file name under
+<code>~/.claude/projects/&lt;project&gt;/</code>. <code>--index</code>
+lists every session it can find with its id and title, so run it first
+if you do not know the id.</p>
+<h2 id="sources">2. Sources</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Source</th>
+<th>How</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code CLI / desktop app</td>
+<td>default; sessions under <code>--projects-root</code>
+(<code>~/.claude/projects</code>)</td>
+<td>native format</td>
+</tr>
+<tr>
+<td>Claude Code web/mobile bridged to your machine</td>
+<td>same</td>
+<td>bridge records are chain-resolved into one conversation</td>
+</tr>
+<tr>
+<td>Claude Desktop cowork (local agent mode)</td>
+<td><code>--cowork-root</code> (auto-detected per platform)</td>
+<td>same record schema, different base directory;
+<code>audit.jsonl</code> is skipped. Tested against synthetic data
+only</td>
+</tr>
+<tr>
+<td>claude.ai chats, Claude Desktop chat, mobile app</td>
+<td><code>--import-claude-ai conversations.json</code></td>
+<td>from Settings → Privacy → Export data. Standalone chats only; no
+Project conversations, no usage or model data (the page says so)</td>
+</tr>
+<tr>
+<td>Claude Code cloud sessions never bridged</td>
+<td>not archivable</td>
+<td>nothing is written to your disk</td>
+</tr>
+</tbody>
+</table>
+<p>Cowork auto-detection:
+<code>%APPDATA%\Claude\local-agent-mode-sessions</code> on Windows,
+<code>~/Library/Application Support/Claude/local-agent-mode-sessions</code>
+on macOS, <code>~/.config/Claude/local-agent-mode-sessions</code>
+elsewhere. Pass <code>--cowork-root &quot;&quot;</code> to disable.</p>
+<h2 id="command-line-reference">3. Command-line reference</h2>
+<p>Every input and output is reachable from the command line; nothing is
+hard-coded. <code>--help</code> prints each option with its default.</p>
+<h3 id="positional">Positional</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<tbody>
+<tr>
+<td><code>session_id</code></td>
+<td>transcript UUID (the <code>.jsonl</code> filename). Optional with
+<code>--index</code> or <code>--import-claude-ai</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="discovery-and-placement">Discovery and placement</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--projects-root DIR</code></td>
+<td><code>~/.claude/projects</code></td>
+<td>where Claude Code writes sessions</td>
+</tr>
+<tr>
+<td><code>--cowork-root DIR</code></td>
+<td>auto per platform</td>
+<td>Claude Desktop cowork sessions, merged into discovery when the
+directory exists; <code>&quot;&quot;</code> disables</td>
+</tr>
+<tr>
+<td><code>--archive-dir DIR</code></td>
+<td><code>$CLAUDE_ARCHIVE_DIR</code> or
+<code>~/claude-archives</code></td>
+<td>where archives, <code>index.html</code> and <code>logs/</code>
+go</td>
+</tr>
+<tr>
+<td><code>--out PATH</code></td>
+<td>—</td>
+<td>output path <strong>stem</strong> for a single archive; each format
+adds its own extension (<code>--out report.pdf --format html</code>
+writes <code>report.html</code>). Overrides <code>--archive-dir</code>
+naming</td>
+</tr>
+<tr>
+<td><code>--title TEXT</code></td>
+<td>the session’s own <code>ai-title</code></td>
+<td>page title; also drives the file name slug. Re-archiving with a
+different title writes a new file</td>
+</tr>
+<tr>
+<td><code>--summary-file FILE</code></td>
+<td>placeholder</td>
+<td>HTML fragment (<code>h3</code>/<code>ul</code> blocks) rendered as
+the hand-written session summary</td>
+</tr>
+</tbody>
+</table>
+<h3 id="content">Content</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--format LIST</code></td>
+<td><code>html</code></td>
+<td>comma-separated: <code>html</code>, <code>text</code>,
+<code>markdown</code> (or <code>md</code>), <code>latex</code>,
+<code>pdf</code></td>
+</tr>
+<tr>
+<td><code>--tool-output on\|off</code></td>
+<td><code>on</code></td>
+<td>include tool input and output. Independent of <code>--format</code>.
+<code>off</code> reduces each tool call to one labelled line — usually
+what you want for LaTeX/PDF</td>
+</tr>
+<tr>
+<td><code>--max-tool-output N</code></td>
+<td><code>16384</code></td>
+<td>elide the middle of any tool output longer than N characters; every
+elision is counted on the page. <code>0</code> = never</td>
+</tr>
+<tr>
+<td><code>--full</code></td>
+<td>off</td>
+<td>never elide (same as <code>--max-tool-output 0</code>)</td>
+</tr>
+<tr>
+<td><code>--subagents on\|off</code></td>
+<td><code>on</code></td>
+<td>render subagent transcripts as appendix sections. With
+<code>off</code> they are still listed in the fidelity report and their
+usage still counts</td>
+</tr>
+<tr>
+<td><code>--no-follow-chain</code></td>
+<td>off</td>
+<td>archive exactly the id given even if a more complete continuation
+exists</td>
+</tr>
+<tr>
+<td><code>--fragment</code></td>
+<td>off</td>
+<td>with <code>--format latex</code>: body only, no preamble,
+transliterated to compile under pdflatex as well as XeLaTeX. Cannot be
+combined with <code>pdf</code></td>
+</tr>
+<tr>
+<td><code>--paginate N</code></td>
+<td><code>0</code></td>
+<td>split the HTML into pages of N turns; page 1 keeps the summary,
+usage and fidelity sections; the sidebar links across pages</td>
+</tr>
+</tbody>
+</table>
+<h3 id="index">Index</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--index</code></td>
+<td>rebuild <code>index.html</code> in <code>--archive-dir</code> and
+exit</td>
+</tr>
+<tr>
+<td><code>--watch SECONDS</code></td>
+<td>with <code>--index</code>: regenerate every SECONDS (minimum 30)
+until Ctrl+C, and stamp the page to reload itself</td>
+</tr>
+</tbody>
+</table>
+<h3 id="claude.ai-import">claude.ai import</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--import-claude-ai FILE</code></td>
+<td>import conversations from a claude.ai
+<code>conversations.json</code></td>
+</tr>
+<tr>
+<td><code>--conversation TEXT</code></td>
+<td>only conversations whose name or uuid contains TEXT
+(case-insensitive)</td>
+</tr>
+<tr>
+<td><code>--list-conversations</code></td>
+<td>list the export’s conversations and exit</td>
+</tr>
+</tbody>
+</table>
+<h3 id="output-control-and-logging">Output control and logging</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--verbose</code></td>
+<td>per-step detail (files parsed, compile passes, audit log path)</td>
+</tr>
+<tr>
+<td><code>--quiet</code></td>
+<td>print nothing but warnings; the audit log still records
+everything</td>
+</tr>
+<tr>
+<td><code>--log-dir DIR</code></td>
+<td>where the per-run audit log goes (default
+<code>&lt;archive-dir&gt;/logs/</code>)</td>
+</tr>
+<tr>
+<td><code>--version</code></td>
+<td>print the archiver version and exit</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>option reference</td>
+</tr>
+</tbody>
+</table>
+<p>Invalid combinations are rejected before anything is written:
+<code>--watch</code> without <code>--index</code>;
+<code>--conversation</code>/<code>--list-conversations</code> without
+<code>--import-claude-ai</code>; <code>--fragment</code> without
+<code>latex</code> or together with <code>pdf</code>;
+<code>--verbose</code> with <code>--quiet</code>; an unknown
+<code>--format</code> value.</p>
+<h2 id="what-is-produced">4. What is produced</h2>
+<h3 id="files">Files</h3>
+<p>In <code>--archive-dir</code> (or at the <code>--out</code> stem),
+one file per format:
+<code>&lt;session-id&gt;_&lt;title-slug&gt;.html|.txt|.md|.tex|.pdf</code>.
+A <code>--fragment</code> LaTeX body is
+<code>&lt;stem&gt;_fragment.tex</code>. Paginated HTML adds
+<code>&lt;stem&gt;_p2.html</code>, <code>&lt;stem&gt;_p3.html</code>, ….
+claude.ai imports are named
+<code>&lt;uuid-prefix&gt;_&lt;slug&gt;</code>. <code>--index</code>
+writes <code>index.html</code>. Every run writes
+<code>logs/&lt;timestamp&gt;_&lt;label&gt;.log</code>.</p>
+<p>When a session is a resumed or bridged conversation, the file is
+named after the transcript actually archived (the most complete file in
+the chain), and the page records which id was requested.</p>
+<h3 id="the-page">The page</h3>
+<p>Every format carries, in this order: the <strong>session
+summary</strong> (hand-written via <code>--summary-file</code>, or a
+placeholder), <strong>usage and cost</strong>, the <strong>fidelity
+report</strong>, then the <strong>transcript</strong>, then
+<strong>subagent transcripts</strong> as appendices.</p>
+<p>Turn kinds and how each format shows them:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Turn</th>
+<th>HTML</th>
+<th>text / Markdown</th>
+<th>LaTeX / PDF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Human prompt (P<em>n</em>)</td>
+<td>right-aligned bubble, verbatim, monospace when columnar, URLs
+linked</td>
+<td>verbatim, never re-wrapped (Markdown: fenced)</td>
+<td>verbatim box</td>
+</tr>
+<tr>
+<td>Claude response (R<em>n</em>)</td>
+<td>markdown rendered</td>
+<td>prose re-wrapped (Markdown: live markdown)</td>
+<td>markdown → LaTeX</td>
+</tr>
+<tr>
+<td>Thinking</td>
+<td>collapsed; empty in practice (see §7)</td>
+<td>labelled</td>
+<td>labelled box</td>
+</tr>
+<tr>
+<td>Tool call</td>
+<td>collapsed input/output, error and pending states, screenshots</td>
+<td>full I/O or one line (<code>--tool-output</code>)</td>
+<td>full I/O or bare title box</td>
+</tr>
+<tr>
+<td>Pasted image</td>
+<td>embedded</td>
+<td>announced as omitted</td>
+<td>announced as omitted</td>
+</tr>
+<tr>
+<td>Harness / system / event</td>
+<td>collapsed lane with the classification evidence</td>
+<td>labelled blocks</td>
+<td>labelled boxes</td>
+</tr>
+<tr>
+<td>Subagent transcript</td>
+<td>collapsible appendix, linked from the spawning call</td>
+<td>appendix section</td>
+<td>appendix section</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reference-tags">Reference tags</h3>
+<p>Every human prompt is <code>P1, P2, …</code> and every response
+<code>R1, R2, …</code>, sequential within the document; subagent turns
+are prefixed <code>A1.</code>, <code>A2.</code> (so <code>A2.R4</code>).
+In HTML the tags are anchors: <code>page.html#P32</code> deep-links to
+the prompt.</p>
+<h3 id="fidelity-report">Fidelity report</h3>
+<p>Every source record is <strong>rendered</strong> (produced one or
+more turns), <strong>folded</strong> (a tool result absorbed into its
+call), or <strong>counted</strong> (metadata with no transcript content
+— and corrupt lines). The three numbers are reconciled against the
+source record count on the page; if they do not add up the page says so
+instead of hiding it. The report also lists records by type, content
+blocks, what was rendered and what was counted, the human-vs-injected
+evidence per record, the subagent files, and caveats (empty thinking
+blocks, unresolved tool calls, snapshot time versus the source’s last
+record).</p>
+<h3 id="usage-and-cost">Usage and cost</h3>
+<p>Tokens per model deduped per <code>requestId</code> — one API
+response is written as several records repeating the same usage, and
+summing them over-reports output ~2.3× on tool-heavy sessions. Cache
+reads, 5-minute and 1-hour cache writes are separated, and a cost is
+estimated at <strong>public list rates</strong> from the
+<code>PRICING</code> table at the top of the script (cache reads at 0.1×
+input, writes at 1.25× / 2×). It is not what a subscription bills.
+Models the table does not know are reported as “no list price”. Subagent
+usage is merged in.</p>
+<h3 id="the-html-pages-controls">The HTML page’s controls</h3>
+<p>Sidebar: <strong>search</strong> (hides turns whose text does not
+match), <strong>filter</strong> (narrows the contents list; keyboard
+<code>/</code>), lane toggles (thinking, tools, harness, events,
+subagents), expand/collapse all, <strong>theme toggle</strong> (light or
+dark, remembered per browser; follows the OS until you choose), session
+facts, contents. Keys: <code>j</code>/<code>k</code> jump between human
+turns.</p>
+<h3 id="the-index">The index</h3>
+<p><code>--index</code> scans every session on disk and marks each
+<strong>archived</strong>, <strong>stale</strong> (source has newer
+records than the archive), <strong>covered</strong> (resumed into
+another transcript that is archived), <strong>legacy v1</strong>, or
+<strong>not archived</strong>; lists archives whose source is not on
+disk (claude.ai imports, deleted transcripts); and shows an activity
+column whose ages decay in the browser. Headers sort on click.
+<code>--watch</code> keeps it regenerating.</p>
+<h2 id="latex-and-pdf">5. LaTeX and PDF</h2>
+<p>Requirements: a TeX installation providing <code>xelatex</code>,
+<code>fvextra</code>, <code>tcolorbox</code>, <code>booktabs</code>,
+<code>enumitem</code>, <code>xcolor</code>, <code>hyperref</code> and
+the DejaVu fonts (TeX Live <code>scheme-full</code> has all of them).
+Fonts are loaded <strong>by file name from TeX Live</strong>, not from
+the system, so output does not depend on the machine’s font
+database.</p>
+<ul>
+<li><code>pdf</code> = the standalone LaTeX compiled by
+<code>xelatex</code> twice (for the table of contents);
+<code>.aux/.log/.out/.toc</code> are removed on success and the
+<code>.tex</code> is kept only if <code>latex</code> was also requested.
+On failure the last 30 lines of the log are printed and the
+<code>.tex</code> stays for inspection.</li>
+<li><code>--fragment</code> emits a body for <code>\input</code> into
+your own document. It is engine-neutral: Greek becomes math
+(<code>Γ</code> → <code>$\Gamma$</code>), sub/superscripts become math,
+arrows and box drawing become ASCII, accents are stripped to the base
+letter. Your preamble needs
+<code>\usepackage{fvextra} \usepackage{xcolor} \usepackage{enumitem} \usepackage{booktabs} \usepackage[most]{tcolorbox}</code>.
+The turn environments are defined with <code>\@ifundefined</code>, so
+you can restyle them from your preamble.</li>
+<li>Emoji and other glyphs no TeX font can set, and C0/C1 control bytes
+(NULs from UTF-16 console captures, backspaces), are removed and
+<strong>counted in the document</strong>. Lines over 500 characters are
+hard-wrapped so TeX can typeset them; the count is stated.</li>
+<li>Cost of full tool I/O, measured: a 636-record session → 643 pages in
+about four minutes; a 1,655-record session is 92 pages with
+<code>--tool-output off</code> and 260 with it on.</li>
+</ul>
+<h2 id="logging-and-audit">6. Logging and audit</h2>
+<p>Console: progress lines by default; <code>--quiet</code> silences
+them; <code>--verbose</code> adds per-step detail. Warnings always go to
+stderr. Every invocation writes
+<code>&lt;archive-dir&gt;/logs/&lt;YYYYMMDD-HHMMSS&gt;_&lt;label&gt;.log</code>
+(or under <code>--log-dir</code>) containing the archiver and Python
+versions, the exact command line, the working directory, start and end
+times, every console message, and the outcome (<code>ok</code>,
+<code>failed: …</code>, <code>crashed: …</code>,
+<code>interrupted</code>). Logging never aborts a run.</p>
+<h2 id="known-limitations">7. Known limitations</h2>
+<p>These are the honest edges. Each is stated on the page where it
+applies.</p>
+<ul>
+<li><strong>Thinking text is never in the transcript.</strong> Claude
+Code requests thinking with <code>display: &quot;omitted&quot;</code>; every
+thinking block on disk is empty. The archive shows <em>that</em> Claude
+thought at a point, never what it thought.</li>
+<li><strong>Cost is a list-price estimate</strong>, not a bill; the
+<code>PRICING</code> table is hardcoded (August 2026 rates) and must be
+edited when rates change.</li>
+<li><strong>A live session is off by one tool call</strong>: archiving
+from inside the session leaves the archiver’s own call unresolved; the
+page says so.</li>
+<li><strong>The claude.ai export contains standalone chats only</strong>
+— no Project conversations, no cowork sessions, no usage or model names.
+It targets the export schema as of mid-2026.</li>
+<li><strong>Cowork discovery follows the documented layout</strong> but
+was tested against synthetic data only; the local cowork store does not
+survive an app reinstall.</li>
+<li><strong>Cloud sessions never bridged to your machine cannot be
+archived.</strong></li>
+<li><strong>Text and Markdown cannot carry images</strong>; they are
+announced as omitted. LaTeX/PDF likewise; the HTML holds them.</li>
+<li><strong>Markdown rendering covers Claude’s own prose</strong>
+(headings, lists incl. nested, tables, code fences of any length,
+quotes, inline code/bold/ italic/strike/links), not arbitrary
+CommonMark: no HTML passthrough, no reference links, no footnotes; table
+cells split on every <code>|</code>.</li>
+<li><strong>Human-vs-injected classification</strong> is authoritative
+on records carrying <code>promptSource</code> /
+<code>origin.kind</code>; older records fall back to text markers, and
+the evidence used is listed per record in the fidelity report.</li>
+<li><strong>Timestamps are local</strong> to the archiving machine
+(hover for UTC in HTML).</li>
+<li><strong>Re-archiving with a different <code>--title</code> writes a
+new file</strong> beside the old one rather than overwriting it.</li>
+<li><strong>Scale</strong>: every run re-reads all <code>.jsonl</code>
+files under the roots to resolve chains; the index compares uuid sets
+pairwise. Fine for hundreds of sessions; slow for thousands.</li>
+<li><strong>Platforms</strong>: developed and validated on Windows; the
+suite runs on Linux in CI; macOS untested beyond the cowork path being
+defined.</li>
+<li><strong>Live index decay is one-directional</strong>: a session can
+go quiet on screen but cannot become active without regeneration
+(<code>--watch</code>).</li>
+</ul>
+<h2 id="tests">8. Tests</h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
+<p>192 checks against the synthetic sessions in <code>examples/</code>
+(no real transcript needed). LaTeX/PDF compile checks are skipped, not
+failed, when no TeX is on <code>PATH</code>. To exercise it on a
+conversation of your own:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">CLAUDE_PROJECTS</span><span class="op">=</span>~/.claude/projects <span class="va">SAMPLE_SESSION</span><span class="op">=&lt;</span>id<span class="op">&gt;</span> python <span class="ex">tests/test_archiver.py</span></span></code></pre></div>
+<p>The suite also checks that this manual and <code>AGENTS.md</code>
+document every CLI flag and that the README’s stated check count is
+current.</p>
+<h2 id="building-this-manual">9. Building this manual</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> docs/build_manual.py</span></code></pre></div>
+<p>Renders <code>USER_MANUAL.md</code> to <code>USER_MANUAL.html</code>
+and <code>USER_MANUAL.pdf</code> with pandoc (and xelatex for the PDF)
+when available, otherwise with the archiver’s own Markdown renderer for
+the HTML and a note that the PDF was skipped. The built files are
+committed so readers need no tooling.</p>
+</body>
+</html>

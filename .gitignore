@@ -1,9 +1,11 @@
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Generated archives never belong in the repo -- a transcript is a verbatim
 # record of a real conversation, including file paths, tool output and
-# anything that was pasted into it.
+# anything that was pasted into it. Archive output is ignored by extension
+# everywhere, and the repository's own documents are whitelisted below.
 *.html
 *.txt
 *.md
@@ -14,7 +16,14 @@ __pycache__/
 *.out
 *.toc
 missfont.log
+demo/
+logs/
 
-# ...except the two files the repo genuinely needs.
+# ...except the files the repo genuinely needs.
 !README.md
+!AGENTS.md
+!CHANGELOG.md
+!docs/*.md
+!docs/*.html
+!docs/*.pdf
 !tests/baseline_html.txt
