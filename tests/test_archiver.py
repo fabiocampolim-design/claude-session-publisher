@@ -36,6 +36,7 @@ spec.loader.exec_module(ta)
 
 FAILURES = []
 CHECKS = [0]
+SKIPPED = [0]
 
 
 def check(name, cond, detail=""):
@@ -51,6 +52,7 @@ def skip(name, reason):
     # A missing TeX installation is an environment fact, not a defect in the
     # archiver: report it without failing the suite (html/text need only Python).
     print(f"  SKIP  {name} ({reason})")
+    SKIPPED[0] += 1
 
 
 def source_of(sid):
@@ -123,6 +125,7 @@ try:
         xe = shutil.which("xelatex")
         if not xe:
             skip("standalone compiles under xelatex", "xelatex not on PATH")
+            SKIPPED[0] += 1      # and the non-empty-pdf check that follows it
         else:
             r = subprocess.run([xe, "-interaction=nonstopmode", "-halt-on-error",
                                 texs[0].name], cwd=str(tmp),
@@ -215,6 +218,7 @@ try:
     print("\n[4] PDF is produced and paginated")
     if not shutil.which("xelatex"):
         skip("pdf export", "xelatex not on PATH")
+        SKIPPED[0] += 4          # the four checks the block would have run
         pdfs = []
     else:
         p = run(SMALL, "pdf", tmp)
@@ -1124,9 +1128,13 @@ if FAILURES:
     sys.exit(1)
 print("ALL GREEN")
 
-# The README states the size of this suite; the number must not drift.
+# The README states the size of this suite; the number must not drift. Checks
+# skipped for a missing TeX count toward the size: they exist, they just did
+# not run here.
 _readme = (HERE.parent / "README.md").read_text(encoding="utf-8", errors="replace")
 _m = re.search(r"(\d+) checks", _readme)
-if not _m or int(_m.group(1)) != CHECKS[0]:
-    print(f"FAIL  README states {_m.group(1) if _m else 'no'} checks, suite has {CHECKS[0]}")
+_size = CHECKS[0] + SKIPPED[0]
+if not _m or int(_m.group(1)) != _size:
+    print(f"FAIL  README states {_m.group(1) if _m else 'no'} checks, suite has "
+          f"{_size} ({CHECKS[0]} run + {SKIPPED[0]} skipped)")
     sys.exit(1)
