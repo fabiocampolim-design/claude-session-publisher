@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.claude/settings.local.json
 
 # Generated archives never belong in the repo -- a transcript is a verbatim
 # record of a real conversation, including file paths, tool output and
