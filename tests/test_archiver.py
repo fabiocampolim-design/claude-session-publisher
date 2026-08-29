@@ -1495,9 +1495,15 @@ try:
         # so the stated count may run one ahead of HEAD before it is made.
         n_commits = int(subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True,
                                        text=True, cwd=str(REPO)).stdout.strip() or 0)
-        check("README's build story counts the commits on main",
-              any(f"{n} commits" in readme for n in (n_commits, n_commits + 1)),
-              f"HEAD has {n_commits}")
+        shallow = subprocess.run(["git", "rev-parse", "--is-shallow-repository"], capture_output=True,
+                                 text=True, cwd=str(REPO)).stdout.strip() == "true"
+        if shallow:
+            # CI checks out a single commit; the count is only meaningful on a full clone.
+            skip("README's build story counts the commits on main", "shallow checkout")
+        else:
+            check("README's build story counts the commits on main",
+                  any(f"{n} commits" in readme for n in (n_commits, n_commits + 1)),
+                  f"HEAD has {n_commits}")
         check("README no longer says 'scribe'", "scribe" not in readme.lower(), "found")
         check("README opening names Markdown among the formats",
               "Markdown" in "\n".join(readme.splitlines()[:14]), "not in opening")
