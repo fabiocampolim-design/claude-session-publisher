@@ -3,6 +3,15 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.4.1 — 2026-08-28
+
+**Fixed**
+- Three record types Claude Code 2.1.9x writes into session files —
+  `cost-state` (running cost/usage snapshot), `artifact-comment-monitor` and
+  `artifact-autoreact-ledger` (artifact comment bookkeeping) — are classed as
+  metadata instead of reported as unhandled. Found while refreshing a
+  65-session archive with 2.4.
+
 ## 2.4 — 2026-08-28
 
 Consolidation release after a full project review.

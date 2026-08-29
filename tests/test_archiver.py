@@ -1001,6 +1001,30 @@ try:
             shutil.rmtree(tmp15b, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # Found by the 2026-08-28 archive refresh (Claude Code 2.1.9x): a
+        # running cost/usage snapshot and two artifact-comment bookkeeping
+        # records. No transcript content; metadata, not "unhandled".
+        print("\n[25c] Cost-state and artifact-monitor records are metadata, not unhandled")
+        tmp15c = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25c-"))
+        try:
+            src = tmp15c / "c.jsonl"
+            src.write_text("\n".join(json.dumps(r) for r in (
+                {"type": "cost-state", "sessionId": "c", "totalCostUSD": 1.5,
+                 "totalDuration": 10, "modelUsage": {}, "hasUnknownModelCost": False},
+                {"type": "artifact-comment-monitor", "v": 1, "sessionId": "c",
+                 "artifacts": {"a1": {"state": "armed", "title": "T"}}},
+                {"type": "artifact-autoreact-ledger", "v": 1, "sessionId": "c",
+                 "accountUuid": "acct", "artifacts": {"a1": {"threads": []}}})) + "\n",
+                encoding="utf-8")
+            t25c = ta.parse_transcript(src, 4000)
+            check("cost-state and artifact-monitor types are counted as metadata",
+                  not any("unhandled" in k for k in t25c.counted_only)
+                  and sum(v for k, v in t25c.counted_only.items() if k.startswith("metadata:")) == 3,
+                  str(dict(t25c.counted_only)))
+        finally:
+            shutil.rmtree(tmp15c, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         print("\n[26] Subagents of the requested session survive chain resolution")
         tmp16 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test26-"))
         try:

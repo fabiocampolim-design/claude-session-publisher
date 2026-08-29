@@ -54,7 +54,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.4"
+VERSION = "2.4.1"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -204,6 +204,9 @@ METADATA_RECORD_TYPES = {
     # worktree bookkeeping (Claude Code 2.1.x): where the session's cwd moved
     # to and which git worktree it entered -- state, not conversation
     "worktree-state", "relocated", "atis-latch",
+    # Claude Code 2.1.9x: running cost/usage snapshot and artifact-comment
+    # bookkeeping (which artifacts are watched, what has been replied to)
+    "cost-state", "artifact-comment-monitor", "artifact-autoreact-ledger",
 }
 
 
