@@ -1140,6 +1140,93 @@ try:
             shutil.rmtree(tmp15d, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # 2026-08-28 code review of 2.5: the meter must be gathered from every
+        # file in a session chain (a continuation file does not repeat the
+        # earlier run's cost-state), every format must state coverage, and a
+        # malformed cost-state record must never abort the export.
+        print("\n[25e] Reported cost: chain merge, every format, malformed records")
+        tmp15e = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25e-"))
+        try:
+            def cs2(start_ms, usd, sid, **extra):
+                r = {"type": "cost-state", "sessionId": sid, "totalCostUSD": usd,
+                     "totalLinesAdded": 0, "totalLinesRemoved": 0, "totalDuration": 1,
+                     "startTime": start_ms,
+                     "modelUsage": {"claude-fable-5": {"costUSD": usd}}}
+                r.update(extra)
+                return r
+            proj = tmp15e / "projects" / "p"
+            proj.mkdir(parents=True)
+            B_ID = "eeeeeeee-0000-4000-8000-000000000001"
+            C_ID = "eeeeeeee-0000-4000-8000-000000000002"
+            convo = [{"type": "user", "uuid": f"e{i}", "sessionId": B_ID,
+                      "timestamp": f"1970-01-01T00:16:{41 + i:02d}Z", "promptSource": "typed",
+                      "origin": {"kind": "human"},
+                      "message": {"role": "user", "content": f"prompt {i}"}} for i in range(6)]
+            later = [{"type": "user", "uuid": f"l{i}", "sessionId": C_ID,
+                      "timestamp": f"1970-01-01T00:33:{20 + i:02d}Z", "promptSource": "typed",
+                      "origin": {"kind": "human"},
+                      "message": {"role": "user", "content": f"later {i}"}} for i in range(3)]
+            # run A ($2.50) is only in the first file; run B ($4.00) only in the continuation
+            (proj / f"{B_ID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in convo + [cs2(1_000_000, 2.5, B_ID)]) + "\n",
+                encoding="utf-8")
+            (proj / f"{C_ID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in convo + later + [cs2(2_000_000, 4.0, C_ID)]) + "\n",
+                encoding="utf-8")
+            out15e = tmp15e / "out"
+            p = subprocess.run([sys.executable, str(SCRIPT), B_ID, "--format", "html,text,markdown,latex",
+                                "--projects-root", str(tmp15e / "projects"),
+                                "--archive-dir", str(out15e)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("chained cost export exits 0", p.returncode == 0, p.stderr[-300:])
+            page = "".join(f.read_text(encoding="utf-8", errors="replace")
+                           for f in out15e.glob("*.html")) if out15e.exists() else ""
+            m = re.search(r'id="archive-meta">(.*?)</script>', page, re.S)
+            meta = json.loads(m.group(1)) if m else {}
+            check("reported cost merges every run in the session chain",
+                  meta.get("reported_cost_usd") == 6.5 and meta.get("reported_cost_runs") == 2,
+                  str({k: v for k, v in meta.items() if "cost" in k}))
+            check("chain-merged coverage is complete, not partial",
+                  meta.get("reported_cost_partial") is False, str(meta.get("reported_cost_partial")))
+
+            # Partial coverage must be stated in text, markdown and LaTeX too.
+            P_ID = "eeeeeeee-0000-4000-8000-000000000003"
+            early = [dict(r, sessionId=P_ID, uuid="p" + r["uuid"], timestamp="1970-01-01T00:00:01Z")
+                     for r in convo]
+            (proj / f"{P_ID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in early + [cs2(1_000_000, 2.5, P_ID)]) + "\n",
+                encoding="utf-8")
+            p = subprocess.run([sys.executable, str(SCRIPT), P_ID, "--format", "text,markdown,latex",
+                                "--projects-root", str(tmp15e / "projects"),
+                                "--archive-dir", str(out15e)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("partial-coverage export exits 0", p.returncode == 0, p.stderr[-300:])
+            for ext in ("txt", "md", "tex"):
+                body = "".join(f.read_text(encoding="utf-8", errors="replace")
+                               for f in out15e.glob(f"{P_ID}*.{ext}"))
+                check(f"{ext} states the reported cost and its partial coverage",
+                      "2.50" in body and "reported by Claude Code" in body
+                      and "not covered" in body, body[:400])
+
+            # Malformed cost-state records: skipped, never fatal.
+            M_ID = "eeeeeeee-0000-4000-8000-000000000004"
+            bad = [cs2(1_000_000, 1.0, M_ID, modelUsage={"claude-fable-5": 0.5}),
+                   cs2(1_500_000, 1.0, M_ID, modelUsage=[]),
+                   cs2(float("nan"), 1.0, M_ID),
+                   cs2(2_000_000, 2.0, M_ID)]
+            src = tmp15e / "m.jsonl"
+            src.write_text("\n".join(json.dumps(r) for r in bad) + "\n", encoding="utf-8")
+            try:
+                tm = ta.parse_transcript(src, 4000)
+                rcm = ta.reported_cost(tm)
+                check("malformed cost-state records do not abort the export",
+                      rcm is not None and abs(rcm["usd"] - 4.0) < 1e-9 and rcm["runs"] == 3, str(rcm))
+            except Exception as e:
+                check("malformed cost-state records do not abort the export", False, repr(e))
+        finally:
+            shutil.rmtree(tmp15e, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         print("\n[26] Subagents of the requested session survive chain resolution")
         tmp16 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test26-"))
         try:
@@ -1247,6 +1334,13 @@ try:
         missing_a = [f for f in flags if f not in agents]
         check("USER_MANUAL documents every CLI flag", bool(flags) and not missing_m, str(missing_m))
         check("AGENTS.md documents every CLI flag", bool(flags) and not missing_a, str(missing_a))
+        # Metadata keys the page embeds must be described for agents and humans.
+        for key in ("reported_cost_usd", "reported_cost_partial", "lines_added"):
+            check(f"AGENTS.md documents metadata key {key}", key in agents, "missing")
+        check("USER_MANUAL explains the reported (cost-state) cost",
+              "cost-state" in manual and "reported cost" in manual.lower(), "missing")
+        check("AGENTS.md no longer calls cost list-price only",
+              "reported" in agents.lower() and "cost-state" in agents, "missing")
         check("README no longer says 'scribe'", "scribe" not in readme.lower(), "found")
         check("README opening names Markdown among the formats",
               "Markdown" in "\n".join(readme.splitlines()[:14]), "not in opening")

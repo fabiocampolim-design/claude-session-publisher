@@ -32,9 +32,13 @@ python transcript_archiver.py --version | --help
   `logs/` for that reason. Only `README.md`, `AGENTS.md`, `CHANGELOG.md`,
   `docs/*` and `tests/baseline_html.txt` are whitelisted.
 - **Do not claim what the page does not say.** Thinking blocks are always
-  empty (Claude Code uses `display: "omitted"`); cost is a list-price estimate;
-  the claude.ai export lacks Project conversations and usage data. Repeat
-  these caveats rather than promising more.
+  empty (Claude Code uses `display: "omitted"`); the *list cost* is an
+  estimate at public rates, and the *reported cost* (Claude Code's own
+  meter, from `cost-state` records, Claude Code ≥ 2.1.9x) is per process —
+  every resume starts a new counter, so it is summed over runs and flagged
+  **partial** when the session began before its first metered run; the
+  claude.ai export lacks Project conversations and usage data. Repeat these
+  caveats rather than promising more.
 - **Re-archiving with a different `--title` creates a second file.** Reuse the
   title (read it from the existing file's `archive-meta` JSON) or delete the
   old file deliberately.
@@ -70,7 +74,7 @@ unless `--out STEM` names a single archive's path stem:
 
 | File | Content |
 |---|---|
-| `<session-id>_<title-slug>.html` (+ `_p2.html`… with `--paginate`) | self-contained page; embedded `<script type="application/json" id="archive-meta">` with title, ids, counts, cost, chain, subagents, `source_kind`, `pages` |
+| `<session-id>_<title-slug>.html` (+ `_p2.html`… with `--paginate`) | self-contained page; embedded `<script type="application/json" id="archive-meta">` with title, ids, counts, `list_cost_usd`, `reported_cost_usd` / `reported_cost_runs` / `reported_cost_partial` (null / 0 / null when the session has no `cost-state`), `lines_added` / `lines_removed`, chain, subagents, `source_kind`, `pages` |
 | `.txt` | plain text, human turns and tool output byte-for-byte |
 | `.md` | Markdown for note vaults; pastes fenced with computed fence length |
 | `.tex` / `_fragment.tex` | XeLaTeX standalone / engine-neutral body |
@@ -79,7 +83,13 @@ unless `--out STEM` names a single archive's path stem:
 | `logs/<timestamp>_<label>.log` | audit log: versions, exact command, all messages, outcome (`--log-dir` relocates) |
 
 Console: `wrote <file> (<MB>)`, then the turn census, record reconciliation,
-subagent count, usage and list cost. `--quiet` silences it; `--verbose` adds
+subagent count, usage and list cost, and — when the session carries
+`cost-state` — `reported=$X (N run(s)[, partial])`. The index shows
+"$X reported" only when coverage is complete, else "$Y at list price".
+Every format (HTML usage note, text, Markdown, LaTeX) states the reported
+figure and its coverage. The meter is gathered from every file of a session
+chain, since a continuation file does not repeat the earlier process's
+snapshots. `--quiet` silences the console; `--verbose` adds
 per-step detail; warnings always go to stderr. Exit code 0 on success; 2 on
 invalid arguments; 1 on a failed run (message on stderr).
 

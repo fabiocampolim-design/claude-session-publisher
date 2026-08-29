@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.5"
+subtitle: "transcript_archiver.py v2.5.1"
 ---
 
 # claude-session-publisher — User Manual
@@ -181,6 +181,23 @@ the `PRICING` table at the top of the script (cache reads at 0.1× input,
 writes at 1.25× / 2×). It is not what a subscription bills. Models the table
 does not know are reported as "no list price". Subagent usage is merged in.
 
+**Reported cost.** Claude Code ≥ 2.1.9x also writes its own meter into the
+session file (`cost-state` records: running cost, per-model cost, lines
+added and removed by tools). When present, the page shows that figure as a
+*reported cost* column beside the list estimate, a session-info row, and
+`reported_cost_usd`, `reported_cost_runs`, `reported_cost_partial`,
+`lines_added`, `lines_removed` in the embedded metadata; the text, Markdown
+and LaTeX formats carry the same sentence. The meter is **per process**:
+every `claude --resume` starts a new counter, and runs made before the
+record existed wrote none — so the figure is the sum of the last snapshot of
+each run (gathered from every file of a resumed session's chain) and is
+flagged **partial** when the session began more than a minute before its
+first metered run. In that case the page says which spend is not covered
+and the index keeps showing the list-price estimate; otherwise the index
+shows "$X reported". A run that Claude Code could not price fully is noted
+("the reported total is a floor"). In practice the meter has come out
+~30 % below the list-price estimate on a one-run session.
+
 ### The HTML page's controls
 
 Sidebar: **search** (hides turns whose text does not match), **filter**
@@ -242,8 +259,11 @@ These are the honest edges. Each is stated on the page where it applies.
 - **Thinking text is never in the transcript.** Claude Code requests thinking
   with `display: "omitted"`; every thinking block on disk is empty. The
   archive shows *that* Claude thought at a point, never what it thought.
-- **Cost is a list-price estimate**, not a bill; the `PRICING` table is
-  hardcoded (August 2026 rates) and must be edited when rates change.
+- **The list cost is an estimate**, not a bill; the `PRICING` table is
+  hardcoded (August 2026 rates) and must be edited when rates change. The
+  **reported cost** is Claude Code's own figure but is per process: sessions
+  resumed across runs, or begun before Claude Code 2.1.9x, are covered only
+  in part and say so (`partial`).
 - **A live session is off by one tool call**: archiving from inside the
   session leaves the archiver's own call unresolved; the page says so.
 - **The claude.ai export contains standalone chats only** — no Project
@@ -279,7 +299,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-207 checks against the synthetic sessions in `examples/` (no real transcript
+220 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

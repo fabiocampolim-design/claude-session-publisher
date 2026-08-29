@@ -3,6 +3,24 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.5.1 — 2026-08-28
+
+Fixes from the code review of 2.5.
+
+**Fixed**
+- The reported cost is now gathered from every file of a resumed session's
+  chain: a continuation file repeats the conversation records but not the
+  earlier process's `cost-state`, so archiving the continuation dropped run 1
+  and wrongly flagged the meter partial (seen on a real two-run session).
+- Text, Markdown and LaTeX now carry the reported-cost sentence with its
+  coverage; before, they showed the figure only through the subtitle and
+  only when coverage was complete.
+- A malformed `cost-state` record (non-dict `modelUsage`, non-finite
+  `startTime`, non-numeric totals) is skipped instead of aborting the export.
+- `AGENTS.md` and the user manual describe the reported cost, its metadata
+  keys and the index behaviour; the suite checks they do.
+- Index detail expression tidied.
+
 ## 2.5 — 2026-08-28
 
 **Added**

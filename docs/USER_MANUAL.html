@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.5</p>
+<p class="subtitle">transcript_archiver.py v2.5.1</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -569,6 +569,26 @@ estimated at <strong>public list rates</strong> from the
 input, writes at 1.25× / 2×). It is not what a subscription bills.
 Models the table does not know are reported as “no list price”. Subagent
 usage is merged in.</p>
+<p><strong>Reported cost.</strong> Claude Code ≥ 2.1.9x also writes its
+own meter into the session file (<code>cost-state</code> records:
+running cost, per-model cost, lines added and removed by tools). When
+present, the page shows that figure as a <em>reported cost</em> column
+beside the list estimate, a session-info row, and
+<code>reported_cost_usd</code>, <code>reported_cost_runs</code>,
+<code>reported_cost_partial</code>, <code>lines_added</code>,
+<code>lines_removed</code> in the embedded metadata; the text, Markdown
+and LaTeX formats carry the same sentence. The meter is <strong>per
+process</strong>: every <code>claude --resume</code> starts a new
+counter, and runs made before the record existed wrote none — so the
+figure is the sum of the last snapshot of each run (gathered from every
+file of a resumed session’s chain) and is flagged
+<strong>partial</strong> when the session began more than a minute
+before its first metered run. In that case the page says which spend is
+not covered and the index keeps showing the list-price estimate;
+otherwise the index shows “$X reported”. A run that Claude Code could
+not price fully is noted (“the reported total is a floor”). In practice
+the meter has come out ~30 % below the list-price estimate on a one-run
+session.</p>
 <h3 id="the-html-pages-controls">The HTML page’s controls</h3>
 <p>Sidebar: <strong>search</strong> (hides turns whose text does not
 match), <strong>filter</strong> (narrows the contents list; keyboard
@@ -635,9 +655,12 @@ applies.</p>
 Code requests thinking with <code>display: &quot;omitted&quot;</code>; every
 thinking block on disk is empty. The archive shows <em>that</em> Claude
 thought at a point, never what it thought.</li>
-<li><strong>Cost is a list-price estimate</strong>, not a bill; the
+<li><strong>The list cost is an estimate</strong>, not a bill; the
 <code>PRICING</code> table is hardcoded (August 2026 rates) and must be
-edited when rates change.</li>
+edited when rates change. The <strong>reported cost</strong> is Claude
+Code’s own figure but is per process: sessions resumed across runs, or
+begun before Claude Code 2.1.9x, are covered only in part and say so
+(<code>partial</code>).</li>
 <li><strong>A live session is off by one tool call</strong>: archiving
 from inside the session leaves the archiver’s own call unresolved; the
 page says so.</li>
@@ -676,7 +699,7 @@ go quiet on screen but cannot become active without regeneration
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>207 checks against the synthetic sessions in <code>examples/</code>
+<p>220 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>

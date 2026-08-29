@@ -42,6 +42,7 @@ import argparse
 import datetime
 import html
 import json
+import math
 import os
 import re
 import sys
@@ -54,7 +55,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.5"
+VERSION = "2.5.1"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -1149,9 +1150,11 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
         t.disposition["counted"] += 1
         if rtype in METADATA_RECORD_TYPES:
             t.counted_only[f"metadata: {rtype}"] += 1
-            if rtype == "cost-state" and isinstance(obj.get("startTime"), (int, float)):
+            if rtype == "cost-state":
                 # cumulative within a run: the last snapshot per run wins
-                t.cost_states[int(obj["startTime"])] = obj
+                key = _cost_state_key(obj)
+                if key is not None:
+                    t.cost_states[key] = obj
         else:
             t.counted_only[f"unhandled record type: {rtype}"] += 1
 
@@ -1257,28 +1260,98 @@ def tokens(n: int) -> str:
 COVERAGE_SLACK_S = 60
 
 
+def _cost_state_key(obj: dict) -> int | None:
+    """The run a cost-state snapshot belongs to, or None if the record is
+    unusable (missing, non-numeric or non-finite startTime). A malformed
+    bookkeeping record must never abort an export."""
+    st = obj.get("startTime")
+    if isinstance(st, bool) or not isinstance(st, (int, float)):
+        return None
+    if isinstance(st, float) and not math.isfinite(st):
+        return None
+    return int(st)
+
+
+def _num(v, cast=float):
+    try:
+        out = cast(v or 0)
+    except (TypeError, ValueError):
+        return cast(0)
+    return out if math.isfinite(float(out)) else cast(0)
+
+
+def cost_states_of(path: Path) -> dict[int, dict]:
+    """Only the cost-state snapshots of a transcript file, last per run.
+
+    A resumed session's continuation file repeats the conversation records
+    but not the earlier process's cost-state, so build() gathers the meter
+    from every file in the chain. This reads just those lines, cheaply."""
+    found: dict[int, dict] = {}
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if '"cost-state"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "cost-state":
+                    continue
+                key = _cost_state_key(obj)
+                if key is not None:
+                    found[key] = obj
+    except OSError:
+        pass
+    return found
+
+
 def reported_cost(t: Transcript, started: datetime.datetime | None = None) -> dict | None:
     if not t.cost_states:
         return None
     runs = [t.cost_states[k] for k in sorted(t.cost_states)]
     by_model: Counter = Counter()
     for r in runs:
-        for model, mu in (r.get("modelUsage") or {}).items():
-            by_model[model] += float((mu or {}).get("costUSD") or 0.0)
+        mu_all = r.get("modelUsage")
+        if not isinstance(mu_all, dict):
+            continue
+        for model, mu in mu_all.items():
+            if isinstance(mu, dict):
+                by_model[str(model)] += _num(mu.get("costUSD"))
     first_start = datetime.datetime.fromtimestamp(min(t.cost_states) / 1000,
                                                   datetime.timezone.utc)
     partial = bool(started is not None
                    and (first_start - started).total_seconds() > COVERAGE_SLACK_S)
     return {
-        "usd": sum(float(r.get("totalCostUSD") or 0.0) for r in runs),
+        "usd": sum(_num(r.get("totalCostUSD")) for r in runs),
         "runs": len(runs),
         "first_start": first_start,
         "partial": partial,
         "unknown_model_cost": any(r.get("hasUnknownModelCost") for r in runs),
-        "lines_added": sum(int(r.get("totalLinesAdded") or 0) for r in runs),
-        "lines_removed": sum(int(r.get("totalLinesRemoved") or 0) for r in runs),
+        "lines_added": sum(_num(r.get("totalLinesAdded"), int) for r in runs),
+        "lines_removed": sum(_num(r.get("totalLinesRemoved"), int) for r in runs),
         "by_model": dict(by_model),
     }
+
+
+def reported_cost_note(rc: dict | None) -> str:
+    """One plain sentence for the text, Markdown and LaTeX formats -- the same
+    facts the HTML usage note states, so no format is silent about coverage."""
+    if not rc:
+        return ""
+    s = (f"Reported cost: ${rc['usd']:,.2f} reported by Claude Code's own meter "
+         f"(cost-state records) over {rc['runs']} run(s) of this session")
+    if rc["lines_added"] or rc["lines_removed"]:
+        s += f"; {rc['lines_added']:,} lines added, {rc['lines_removed']:,} removed by tools"
+    if rc["partial"]:
+        s += (f". This session began before its first metered run "
+              f"({fmt_local(rc['first_start'])}); spend before that is not covered, "
+              "so the list-price figure is the estimate for the whole session.")
+    else:
+        s += ". The meter covers the whole session."
+    if rc["unknown_model_cost"]:
+        s += " Claude Code flagged a model it could not price; the reported total is a floor."
+    return s
 
 
 def usage_table(t: Transcript, on: datetime.date,
@@ -1709,6 +1782,13 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             seen_agents.add(aid)
             CON.detail(f"parsing subagent {af}")
             agents.append((aid, af, parse_transcript(af, max_tool_output)))
+    # The cost meter is per process and a continuation file does not repeat
+    # the earlier process's snapshots, so gather them from every file in the
+    # chain. Keyed by startTime, duplicates collapse; the archived file wins.
+    for cid in chain_ids:
+        if cid in sessions and sessions[cid].path != path:
+            for key, rec in cost_states_of(sessions[cid].path).items():
+                t.cost_states.setdefault(key, rec)
     include_agents = subagents == "on"
     assign_tags(t)
     for _k, (_aid2, _af2, _at2) in enumerate(agents, 1):
@@ -1956,7 +2036,8 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             written.append((q, len(page)))
 
     ctx = {"title": title, "session_id": used, "subtitle": subtitle,
-           "summary_text": html_fragment_to_text(summary_inner) if summary_inner else ""}
+           "summary_text": html_fragment_to_text(summary_inner) if summary_inner else "",
+           "cost_note": reported_cost_note(rc)}
 
     # Format and tool-output are independent: the script does not infer one from
     # the other. Tool arguments are pretty-printed wherever they appear, so this
@@ -2464,6 +2545,8 @@ def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
                  f"{'' if subagents_on else ' (not rendered)'}".ljust(52)
                  + format(sum(at.record_types.values()), ",").rjust(9))
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
+    if ctx.get("cost_note"):
+        L += ["", wrap_prose(ctx["cost_note"], W)]
     L += ["", wrap_prose(_format_note(tool_output, n_tools), W), ""]
     _text_turns(t.turns, L, W, tool_output)
     if agents and subagents_on:
@@ -2501,6 +2584,8 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
                  f"{'' if subagents_on else ' (not rendered)'}: "
                  f"{sum(at.record_types.values()):,}")
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
+    if ctx.get("cost_note"):
+        L += ["", ctx["cost_note"]]
     L += ["", _format_note(tool_output, n_tools),
           "Human turns and tool I/O are fenced verbatim below; Claude's own "
           "prose is markdown and is left live, so its headings appear in this "
@@ -2695,6 +2780,8 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
         B.append(esc(label) + " & " + format(n, ",") + " \\\\\n")
     B.append("\\bottomrule\n\\end{tabular}\n\n")
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
+    if ctx.get("cost_note"):
+        B.append(inl(ctx["cost_note"]) + "\n\n")
     B.append(inl(_format_note(tool_output, n_tools)) + "\n\n")
     # The drop-note's numbers are only known once the whole body is rendered,
     # so reserve a slot and assign it afterwards. Filling it by string
@@ -3027,13 +3114,15 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
                 def _n(key, spec=","):
                     v = meta.get(key)
                     return format(v, spec) if isinstance(v, (int, float)) else "?"
-                detail = (f'{_n("records")} records &middot; '
-                          f'{_n("tool_calls")} tool calls &middot; '
-                          + (f'${_n("reported_cost_usd", ",.2f")} reported &middot; '
-                             if isinstance(meta.get("reported_cost_usd"), (int, float))
-                             and meta.get("reported_cost_partial") is False else
-                             f'${_n("list_cost_usd", ",.2f")} at list price &middot; ')
-                          +                           f'{meta["size_mb"]:.1f} MB &middot; archiver v{meta.get("archiver_version")}')
+                # The meter's figure is shown only when it covers the whole
+                # session; otherwise the list-price estimate is the honest one.
+                metered = (isinstance(meta.get("reported_cost_usd"), (int, float))
+                           and meta.get("reported_cost_partial") is False)
+                cost_txt = (f'${_n("reported_cost_usd", ",.2f")} reported' if metered
+                            else f'${_n("list_cost_usd", ",.2f")} at list price')
+                detail = (f'{_n("records")} records &middot; {_n("tool_calls")} tool calls &middot; '
+                          f'{cost_txt} &middot; {meta["size_mb"]:.1f} MB &middot; '
+                          f'archiver v{meta.get("archiver_version")}')
         elif covered_by:
             status = '<span class="pill covered">covered</span>'
             link = esc(info.title or sid)
