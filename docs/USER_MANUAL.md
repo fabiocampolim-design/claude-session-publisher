@@ -320,7 +320,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-258 checks against the synthetic sessions in `examples/` (no real transcript
+260 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

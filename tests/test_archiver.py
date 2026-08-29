@@ -1616,6 +1616,15 @@ try:
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8", errors="replace") \
             if (REPO / "CHANGELOG.md").exists() else ""
         check("CHANGELOG names the current version", ta.VERSION in changelog, "version missing")
+        # githubify rule 17: the warranty disclaimer and limitation of liability
+        # must survive every rewrite -- in LICENSE and, visibly, in the README.
+        licence = (REPO / "LICENSE").read_text(encoding="utf-8", errors="replace")
+        check("LICENSE disclaims warranty and liability",
+              "WITHOUT WARRANTY OF ANY KIND" in licence and "BE LIABLE" in licence, "clause missing")
+        check("README carries a visible Disclaimer under Licence",
+              "### Disclaimer" in readme and "without warranty of any kind" in readme
+              and "liable" in readme and readme.index("## Licence") < readme.index("### Disclaimer"),
+              "disclaimer missing")
     finally:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:

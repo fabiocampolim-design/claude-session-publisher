@@ -118,7 +118,7 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
 - **Every run is on the record** — `--verbose`/`--quiet` for the console, and
   an audit log per invocation under `<archive-dir>/logs/` (exact command
   line, versions, every message, outcome), `--log-dir` to move it.
-- Standard library only, one file, 258 checks in the test suite, CI on
+- Standard library only, one file, 260 checks in the test suite, CI on
   Linux/Windows/macOS.
 
 ## How this compares
@@ -281,7 +281,7 @@ records, and each is now covered by a test:
 python tests/test_archiver.py
 ```
 
-258 checks, run against the synthetic sessions in `examples/` —
+260 checks, run against the synthetic sessions in `examples/` —
 self-contained, no real transcript needed. The LaTeX/PDF compile checks are
 skipped (not failed) when no TeX installation is on `PATH`; everything else
 needs only Python. The suite also verifies that the user manual and
@@ -326,7 +326,7 @@ survival testing. Two more days of review-driven releases followed (2.4 →
 2.6, August 28–29: a full project review, an independent code-review pass,
 survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded), bringing the history to
-32 commits.
+34 commits.
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
@@ -337,7 +337,7 @@ scientific papers use):
 | **Conceptualization** | The premise — a full-fidelity, self-contained record of an AI-assisted session, fit for scientific reporting — and most feature ideas: P/R citation tags, the tool-output switch, the live-activity index, pagination | The render/fold/count reconciliation model that became the fidelity report |
 | **Methodology** | The priority order (content fidelity first, then sources, then formats); the academic-publishing requirements that shaped the LaTeX fragment | Chain resolution by uuid-set comparison; per-`requestId` usage dedup; the verbatim-human-turn rule |
 | **Software** | — | All of it |
-| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*); commissioned the review and code-review passes | The 258-check test suite and CI; the review-driven survival runs |
+| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*); commissioned the review and code-review passes | The 260-check test suite and CI; the review-driven survival runs |
 | **Investigation** | Directed the survey of neighbouring tools | Code and documentation analysis for the comparison section |
 | **Data curation** | — | The synthetic sample and the showcase conversation, built to carry exactly the cases that had broken on real data |
 | **Visualization** | The chat layout (human right, Claude left), box styling, tag and timestamp placement | The HTML/CSS realising it |
@@ -347,3 +347,14 @@ scientific papers use):
 ## Licence
 
 MIT — see `LICENSE`.
+
+### Disclaimer
+
+This software is provided **as is**, without warranty of any kind, express
+or implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose and non-infringement. In no event shall the
+author be liable for any claim, damages or other liability — whether in
+contract, tort or otherwise — arising from, out of or in connection with the
+software or its use. You alone are responsible for using it lawfully, for
+the transcripts and data you feed it and publish with it, and for complying
+with the terms of any third-party service or content it touches.
