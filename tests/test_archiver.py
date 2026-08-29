@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import datetime
 import re
 import shutil
 import subprocess
@@ -1023,6 +1024,120 @@ try:
                   str(dict(t25c.counted_only)))
         finally:
             shutil.rmtree(tmp15c, ignore_errors=True)
+
+        # ------------------------------------------------------------------
+        # cost-state is Claude Code's own running cost meter. It is written per
+        # *process*: every `claude --resume` starts a fresh counter with a new
+        # startTime, and older runs (before the record existed) wrote none. So
+        # the reported cost is the sum of the last snapshot per startTime, and
+        # it is partial when the session began before the first covered run.
+        print("\n[25d] cost-state: Claude Code's reported cost, deduped per run, coverage flagged")
+        tmp15d = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25d-"))
+        try:
+            def cs(start_ms, usd, added=0, removed=0, unknown=False, sid="d"):
+                return {"type": "cost-state", "sessionId": sid, "totalCostUSD": usd,
+                        "totalLinesAdded": added, "totalLinesRemoved": removed,
+                        "totalDuration": 1, "startTime": start_ms,
+                        "modelUsage": {"claude-fable-5": {"costUSD": usd * 0.9},
+                                       "claude-haiku-4-5-20251001": {"costUSD": usd * 0.1}},
+                        "hasUnknownModelCost": unknown}
+            # run A: two snapshots (cumulative, keep the last); run B: one.
+            recs = [cs(1_000_000, 1.0, 5, 1), cs(1_000_000, 2.5, 10, 2), cs(2_000_000, 4.0, 7, 0)]
+            src = tmp15d / "d.jsonl"
+            src.write_text("\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+            t25d = ta.parse_transcript(src, 4000)
+            rc = ta.reported_cost(t25d)
+            check("reported cost sums the last snapshot of each run",
+                  rc is not None and abs(rc["usd"] - 6.5) < 1e-9 and rc["runs"] == 2, str(rc))
+            check("reported cost is split per model across runs",
+                  rc is not None and abs(rc["by_model"]["claude-fable-5"] - 5.85) < 1e-9
+                  and abs(rc["by_model"]["claude-haiku-4-5-20251001"] - 0.65) < 1e-9, str(rc))
+            check("lines added/removed follow the same per-run rule",
+                  rc is not None and rc["lines_added"] == 17 and rc["lines_removed"] == 2, str(rc))
+            check("no cost-state -> no reported cost",
+                  ta.reported_cost(ta.parse_transcript(source_of(SAMPLE), 4000)) is None)
+            # coverage: first run started at t=1000s; a session whose first
+            # record is 10 minutes older has uncovered spend.
+            t_early = datetime.datetime.fromtimestamp(1_000_000 / 1000 - 600, datetime.timezone.utc)
+            t_same = datetime.datetime.fromtimestamp(1_000_000 / 1000 + 5, datetime.timezone.utc)
+            check("coverage is partial when the session predates the first run",
+                  ta.reported_cost(t25d, started=t_early)["partial"] is True)
+            check("coverage is complete when the session starts with the first run",
+                  ta.reported_cost(t25d, started=t_same)["partial"] is False)
+
+            # End to end: page, embedded metadata, index.
+            proj = tmp15d / "projects" / "p"
+            proj.mkdir(parents=True)
+            SID = "dddddddd-0000-4000-8000-000000000001"
+            base = [{"type": "user", "uuid": "u1", "sessionId": SID,
+                     "timestamp": "1970-01-01T00:16:41Z", "promptSource": "typed",
+                     "origin": {"kind": "human"},
+                     "message": {"role": "user", "content": "hello"}},
+                    {"type": "assistant", "uuid": "a1", "sessionId": SID,
+                     "timestamp": "1970-01-01T00:16:42Z", "requestId": "r1",
+                     "message": {"role": "assistant", "model": "claude-fable-5",
+                                 "content": [{"type": "text", "text": "hi"}],
+                                 "usage": {"input_tokens": 10, "output_tokens": 10}}}]
+            (proj / f"{SID}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in base + [cs(1_000_000, 2.5, sid=SID),
+                                                          cs(2_000_000, 4.0, sid=SID)]) + "\n",
+                encoding="utf-8")
+            out25d = tmp15d / "out"
+            p = subprocess.run([sys.executable, str(SCRIPT), SID, "--format", "html,text,markdown",
+                                "--projects-root", str(tmp15d / "projects"),
+                                "--archive-dir", str(out25d)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("cost-state export exits 0", p.returncode == 0, p.stderr[-300:])
+            page = "".join(f.read_text(encoding="utf-8", errors="replace")
+                           for f in out25d.glob("*.html")) if out25d.exists() else ""
+            m = re.search(r'id="archive-meta">(.*?)</script>', page, re.S)
+            meta = json.loads(m.group(1)) if m else {}
+            check("metadata carries the reported cost and its coverage",
+                  meta.get("reported_cost_usd") == 6.5 and meta.get("reported_cost_runs") == 2
+                  and meta.get("reported_cost_partial") is False, str({k: v for k, v in meta.items() if "cost" in k}))
+            check("metadata keeps the list-price estimate alongside",
+                  isinstance(meta.get("list_cost_usd"), (int, float)), str(meta.get("list_cost_usd")))
+            check("HTML page shows the reported figure with its source",
+                  "$6.50" in page and "reported by Claude Code" in page, "figure missing")
+            txt = "".join(f.read_text(encoding="utf-8", errors="replace")
+                          for f in list(out25d.glob("*.txt")) + list(out25d.glob("*.md")))
+            check("text and markdown carry the reported cost too",
+                  txt.count("$6.50") >= 2, str(txt.count("$6.50")))
+            p = subprocess.run([sys.executable, str(SCRIPT), "--index",
+                                "--projects-root", str(tmp15d / "projects"),
+                                "--archive-dir", str(out25d)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            idx = (out25d / "index.html").read_text(encoding="utf-8", errors="replace")
+            check("index prefers the reported cost when coverage is complete",
+                  "$6.50 reported" in idx, "index still shows list price only")
+
+            # Partial coverage: session records predate the first run by an hour.
+            SID2 = "dddddddd-0000-4000-8000-000000000002"
+            early = [dict(r, sessionId=SID2, timestamp="1970-01-01T00:00:01Z") for r in base]
+            (proj / f"{SID2}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in early + [cs(1_000_000, 2.5, sid=SID2)]) + "\n",
+                encoding="utf-8")
+            p = subprocess.run([sys.executable, str(SCRIPT), SID2, "--format", "html",
+                                "--projects-root", str(tmp15d / "projects"),
+                                "--archive-dir", str(out25d)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            page2 = "".join(f.read_text(encoding="utf-8", errors="replace")
+                            for f in out25d.glob(f"{SID2}*.html"))
+            m2 = re.search(r'id="archive-meta">(.*?)</script>', page2, re.S)
+            meta2 = json.loads(m2.group(1)) if m2 else {}
+            check("partial coverage is flagged in metadata and on the page",
+                  meta2.get("reported_cost_partial") is True and "not covered" in page2,
+                  str(meta2.get("reported_cost_partial")))
+            subprocess.run([sys.executable, str(SCRIPT), "--index",
+                            "--projects-root", str(tmp15d / "projects"),
+                            "--archive-dir", str(out25d)], capture_output=True, text=True,
+                           cwd=str(SCRIPT.parent))
+            idx = (out25d / "index.html").read_text(encoding="utf-8", errors="replace")
+            row2 = idx[idx.find(f'data-k="{SID2}"'):][:1500]
+            check("index falls back to list price when coverage is partial",
+                  "at list price" in row2 and "reported" not in row2, row2[:200])
+        finally:
+            shutil.rmtree(tmp15d, ignore_errors=True)
 
         # ------------------------------------------------------------------
         print("\n[26] Subagents of the requested session survive chain resolution")

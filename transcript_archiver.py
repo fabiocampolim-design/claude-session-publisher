@@ -54,7 +54,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.4.1"
+VERSION = "2.5"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -797,6 +797,9 @@ class Transcript:
         self.mcp_servers = Counter()
         self.disposition = Counter()   # per-record: rendered / folded / counted
         self.empty_thinking = 0
+        # cost-state snapshots keyed by process startTime (ms): Claude Code
+        # restarts its meter on every resume, so one session has many runs.
+        self.cost_states: dict[int, dict] = {}
 
 
 def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
@@ -1146,6 +1149,9 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
         t.disposition["counted"] += 1
         if rtype in METADATA_RECORD_TYPES:
             t.counted_only[f"metadata: {rtype}"] += 1
+            if rtype == "cost-state" and isinstance(obj.get("startTime"), (int, float)):
+                # cumulative within a run: the last snapshot per run wins
+                t.cost_states[int(obj["startTime"])] = obj
         else:
             t.counted_only[f"unhandled record type: {rtype}"] += 1
 
@@ -1244,7 +1250,39 @@ def tokens(n: int) -> str:
 # Rendering
 # ---------------------------------------------------------------------------
 
-def usage_table(t: Transcript, on: datetime.date) -> tuple[str, dict]:
+# Claude Code >= 2.1.9x writes `cost-state`: its own cost meter, per process.
+# Every `claude --resume` starts a new counter (new startTime), and runs made
+# before the record existed wrote none -- so the reported figure is the sum of
+# the last snapshot of each run, and it can cover only part of a session.
+COVERAGE_SLACK_S = 60
+
+
+def reported_cost(t: Transcript, started: datetime.datetime | None = None) -> dict | None:
+    if not t.cost_states:
+        return None
+    runs = [t.cost_states[k] for k in sorted(t.cost_states)]
+    by_model: Counter = Counter()
+    for r in runs:
+        for model, mu in (r.get("modelUsage") or {}).items():
+            by_model[model] += float((mu or {}).get("costUSD") or 0.0)
+    first_start = datetime.datetime.fromtimestamp(min(t.cost_states) / 1000,
+                                                  datetime.timezone.utc)
+    partial = bool(started is not None
+                   and (first_start - started).total_seconds() > COVERAGE_SLACK_S)
+    return {
+        "usd": sum(float(r.get("totalCostUSD") or 0.0) for r in runs),
+        "runs": len(runs),
+        "first_start": first_start,
+        "partial": partial,
+        "unknown_model_cost": any(r.get("hasUnknownModelCost") for r in runs),
+        "lines_added": sum(int(r.get("totalLinesAdded") or 0) for r in runs),
+        "lines_removed": sum(int(r.get("totalLinesRemoved") or 0) for r in runs),
+        "by_model": dict(by_model),
+    }
+
+
+def usage_table(t: Transcript, on: datetime.date,
+                rc: dict | None = None) -> tuple[str, dict]:
     rows = []
     totals = Counter()
     total_cost = 0.0
@@ -1265,26 +1303,41 @@ def usage_table(t: Transcript, on: datetime.date) -> tuple[str, dict]:
         else:
             unpriced.append(model)
             cost_cell = "<span class=\"muted\">no list price</span>"
+        rep_cell = ""
+        if rc:
+            rv = rc["by_model"].get(model)
+            rep_cell = ("<td class=num>" + (f"${rv:,.2f}" if rv is not None
+                                            else '<span class="muted">&mdash;</span>') + "</td>")
         rows.append(
             "<tr><td><code>{m}</code></td><td class=num>{req}</td><td class=num>{inp}</td>"
             "<td class=num>{out}</td><td class=num>{cr}</td><td class=num>{cw}</td>"
-            "<td class=num>{cost}</td></tr>".format(
+            "<td class=num>{cost}</td>{rep}</tr>".format(
                 m=esc(model), req=tokens(agg["requests"]), inp=tokens(agg["input"]),
                 out=tokens(agg["output"]), cr=tokens(agg["cache_read"]),
-                cw=tokens(agg["cache_write_5m"] + agg["cache_write_1h"]), cost=cost_cell))
+                cw=tokens(agg["cache_write_5m"] + agg["cache_write_1h"]), cost=cost_cell,
+                rep=rep_cell))
+    if rc:
+        # models Claude Code priced that never produced a rendered response
+        for model in sorted(set(rc["by_model"]) - set(t.usage_by_model)):
+            rows.append(f"<tr><td><code>{esc(model)}</code></td>"
+                        + '<td class=num>&mdash;</td>' * 5
+                        + '<td class=num><span class="muted">&mdash;</span></td>'
+                        + f'<td class=num>${rc["by_model"][model]:,.2f}</td></tr>')
     foot = (
         "<tr class=total><td>total</td><td class=num>{req}</td><td class=num>{inp}</td>"
         "<td class=num>{out}</td><td class=num>{cr}</td><td class=num>{cw}</td>"
-        "<td class=num>${cost:,.2f}</td></tr>".format(
+        "<td class=num>${cost:,.2f}</td>{rep}</tr>".format(
             req=tokens(totals["requests"]), inp=tokens(totals["input"]),
             out=tokens(totals["output"]), cr=tokens(totals["cache_read"]),
             cw=tokens(totals["cache_write_5m"] + totals["cache_write_1h"]),
-            cost=total_cost))
+            cost=total_cost,
+            rep=(f'<td class=num>${rc["usd"]:,.2f}</td>' if rc else "")))
     table = (
         '<div class="table-wrap"><table class="usage"><thead><tr>'
         "<th>model</th><th>requests</th><th>input</th><th>output</th>"
         "<th>cache read</th><th>cache write</th><th>list cost</th>"
-        "</tr></thead><tbody>" + "".join(rows) + foot + "</tbody></table></div>")
+        + ("<th>reported cost</th>" if rc else "")
+        + "</tr></thead><tbody>" + "".join(rows) + foot + "</tbody></table></div>")
     note = (
         "<p class=\"muted small\">Usage is deduped per <code>requestId</code> (one API response is "
         "written as several records, each repeating that response's cumulative usage; summing them "
@@ -1293,12 +1346,29 @@ def usage_table(t: Transcript, on: datetime.date) -> tuple[str, dict]:
         "1-hour writes at 2&times; &mdash; not what a subscription bills."
         + (f" No list price on file for: {esc(', '.join(sorted(set(unpriced))))}." if unpriced else "")
         + "</p>")
+    if rc:
+        note += (
+            '<p class="muted small"><b>Reported cost</b> is Claude Code\'s own meter '
+            f'(<code>cost-state</code> records): ${rc["usd"]:,.2f} reported by Claude Code over '
+            f'{rc["runs"]} run(s) of this session'
+            + (f'; {rc["lines_added"]:,} lines added, {rc["lines_removed"]:,} removed by tools'
+               if rc["lines_added"] or rc["lines_removed"] else "")
+            + '. The meter restarts on every resume and only runs on Claude Code &ge; 2.1.9x write it'
+            + (f' &mdash; <b>this session began before its first metered run '
+               f'({fmt_local(rc["first_start"])}); spend before that is not covered</b>, so the '
+               'list-price estimate is the figure for the whole session.'
+               if rc["partial"] else
+               ', and here the meter covers the whole session.')
+            + (' Claude Code flagged a model it could not price; the reported total is a floor.'
+               if rc["unknown_model_cost"] else "")
+            + '</p>')
     # A session with no assistant response at all (opened, never answered) leaves
     # `totals` empty; callers index these keys directly, so seed them.
     out = {k: 0 for k in ("requests", "input", "output", "cache_read",
                           "cache_write_5m", "cache_write_1h")}
     out.update(totals)
     out["cost"] = total_cost
+    out["reported"] = rc
     return table + note, out
 
 
@@ -1685,7 +1755,8 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             agent_href[aid] = ("" if k == 1 else page_file(k)) + f"#subagent-{aid}"
 
     units, toc = render_turns(t, agent_href=agent_href)
-    usage_html, usage_totals = usage_table(t, started.date())
+    rc = reported_cost(t, started)
+    usage_html, usage_totals = usage_table(t, started.date(), rc)
     if agents:
         usage_html += (f'<p class="muted small">Totals include '
                        f'{len(agents)} subagent transcript(s).</p>')
@@ -1762,6 +1833,10 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         info_row("Output tokens", f"{usage_totals['output']:,}"),
         info_row("Cache reads", f"{usage_totals['cache_read']:,}"),
         info_row("List cost", f"${usage_totals['cost']:,.2f}"),
+        info_row("Reported cost",
+                 f"${rc['usd']:,.2f} reported by Claude Code ({rc['runs']} run(s)"
+                 + (", partial: earlier runs not covered" if rc["partial"] else "") + ")")
+        if rc else "",
         info_row("Compactions", f"{len(t.compactions):,}") if t.compactions else "",
         info_row("Skills used", esc(", ".join(sorted(t.skills)))) if t.skills else "",
     ])
@@ -1816,6 +1891,11 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
         "output_tokens": usage_totals["output"],
         "cache_read_tokens": usage_totals["cache_read"],
         "list_cost_usd": round(usage_totals["cost"], 4),
+        "reported_cost_usd": round(rc["usd"], 4) if rc else None,
+        "reported_cost_runs": rc["runs"] if rc else 0,
+        "reported_cost_partial": rc["partial"] if rc else None,
+        "lines_added": rc["lines_added"] if rc else None,
+        "lines_removed": rc["lines_removed"] if rc else None,
         "models": sorted(t.models),
         "chain": related,
         "subagents": [{"agent_id": aid,
@@ -1829,7 +1909,9 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     subtitle = (f"{fmt_local(started)} – {fmt_local(ended)} · "
                 f"{t.rendered_types.get('human turn', 0)} human turns · "
                 f"{t.rendered_types.get('tool call', 0)} tool calls · "
-                f"${usage_totals['cost']:,.2f} at list price")
+                + (f"${rc['usd']:,.2f} reported by Claude Code"
+                   if rc and not rc["partial"] else
+                   f"${usage_totals['cost']:,.2f} at list price"))
 
     lead_html = (chain_html
                  + '<section class="turn summary-turn" id="summary">'
@@ -1933,7 +2015,9 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                 f"{sum(sum(at.record_types.values()) for _, _, at in agents)} records"
                 + ("" if include_agents else " (not rendered: --subagents off)"))
     CON.say(f"  output={usage_totals['output']:,} tok  cache-read={usage_totals['cache_read']:,} tok  "
-            f"list-cost=${usage_totals['cost']:,.2f}")
+            f"list-cost=${usage_totals['cost']:,.2f}"
+            + (f"  reported=${rc['usd']:,.2f} ({rc['runs']} run(s)"
+               f"{', partial' if rc['partial'] else ''})" if rc else ""))
     disp = t.disposition
     if disp["rendered"] + disp["folded"] + disp["counted"] != sum(t.record_types.values()):
         CON.note("warning: fidelity report does not reconcile -- a record class is "
@@ -2945,8 +3029,11 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
                     return format(v, spec) if isinstance(v, (int, float)) else "?"
                 detail = (f'{_n("records")} records &middot; '
                           f'{_n("tool_calls")} tool calls &middot; '
-                          f'${_n("list_cost_usd", ",.2f")} at list price &middot; '
-                          f'{meta["size_mb"]:.1f} MB &middot; archiver v{meta.get("archiver_version")}')
+                          + (f'${_n("reported_cost_usd", ",.2f")} reported &middot; '
+                             if isinstance(meta.get("reported_cost_usd"), (int, float))
+                             and meta.get("reported_cost_partial") is False else
+                             f'${_n("list_cost_usd", ",.2f")} at list price &middot; ')
+                          +                           f'{meta["size_mb"]:.1f} MB &middot; archiver v{meta.get("archiver_version")}')
         elif covered_by:
             status = '<span class="pill covered">covered</span>'
             link = esc(info.title or sid)

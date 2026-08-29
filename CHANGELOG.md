@@ -3,6 +3,22 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.5 — 2026-08-28
+
+**Added**
+- Claude Code's own cost meter. Claude Code ≥ 2.1.9x writes `cost-state`
+  records (running cost, per-model cost, lines added/removed). The archiver
+  now reports that figure next to the list-price estimate: a *reported cost*
+  column in the usage table, a session-info row, `reported_cost_usd`,
+  `reported_cost_runs`, `reported_cost_partial`, `lines_added` and
+  `lines_removed` in the embedded metadata, and the index shows
+  "$X reported" instead of "at list price" when the meter covers the session.
+- The meter is per process — every `claude --resume` starts a new counter,
+  and runs made before the record existed wrote none — so the figure is the
+  sum of the last snapshot of each run, and it is flagged *partial* (page,
+  metadata, index falls back to list price) when the session began before
+  its first metered run.
+
 ## 2.4.1 — 2026-08-28
 
 **Fixed**

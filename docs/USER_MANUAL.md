@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.4.1"
+subtitle: "transcript_archiver.py v2.5"
 ---
 
 # claude-session-publisher — User Manual
@@ -279,7 +279,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-193 checks against the synthetic sessions in `examples/` (no real transcript
+207 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 
