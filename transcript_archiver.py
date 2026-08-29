@@ -55,7 +55,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6.1"
+VERSION = "2.6.2"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -2377,26 +2377,58 @@ _TEX_HARD_WRAP = 500
 _TEX_BOX_MAX_LINES = 1500
 
 
-def _verbatim_chunks(text: str) -> list[str]:
-    """Split verbatim text into pieces of at most _TEX_BOX_MAX_LINES typeset
-    lines, counting the hard wrap a long line will get. One piece for the
-    common case."""
-    lines = text.split("\n")
+class _Atomic(str):
+    """A block already rendered to LaTeX (a paragraph, list, table) that a
+    box split may not cut; it costs its source lines."""
+
+
+def _pack_verbatim(segments) -> list[list[str]]:
+    """Plan how a turn's segments fill consecutive boxes of at most
+    _TEX_BOX_MAX_LINES typeset lines. A plain str is verbatim text that may be
+    cut between lines (a tool call's input, then its output; a fenced block),
+    counting the hard wrap a long line will get; an _Atomic is placed whole.
+    Returns the boxes; each is the list of pieces it holds, one per segment
+    it has a part of, in order, so the input/output boundary stays a block
+    boundary. One box holding every segment whole for the common case.
+
+    A final remainder of blank lines only (a trailing newline pushed just
+    over the limit) joins the previous box instead of becoming an '(empty)'
+    part of its own."""
     def cost(ln):
         return max(1, -(-len(ln) // _TEX_HARD_WRAP))
-    if sum(cost(ln) for ln in lines) <= _TEX_BOX_MAX_LINES:
-        return [text]
-    chunks, cur, n = [], [], 0
-    for ln in lines:
-        c = cost(ln)
+    boxes, cur, n = [], [], 0          # cur: [[segment index, lines | atomic], ...]
+
+    def place(seg, unit, c):
+        nonlocal cur, n
         if cur and n + c > _TEX_BOX_MAX_LINES:
-            chunks.append("\n".join(cur))
+            boxes.append(cur)
             cur, n = [], 0
-        cur.append(ln)
+        if cur and cur[-1][0] == seg and not isinstance(unit, _Atomic):
+            cur[-1][1].append(unit)
+        else:
+            cur.append([seg, unit if isinstance(unit, _Atomic) else [unit]])
         n += c
+
+    for seg, text in enumerate(segments):
+        if isinstance(text, _Atomic):
+            place(seg, text, text.count("\n"))
+        else:
+            for ln in text.split("\n"):
+                place(seg, ln, cost(ln))
     if cur:
-        chunks.append("\n".join(cur))
-    return chunks
+        boxes.append(cur)
+
+    def blank(piece):
+        return not isinstance(piece, _Atomic) and not any(ln.strip() for ln in piece)
+    if len(boxes) > 1 and all(blank(piece) for _, piece in boxes[-1]):
+        prev, last = boxes[-2], boxes.pop()
+        for seg, lines in last:
+            if prev[-1][0] == seg and not isinstance(prev[-1][1], _Atomic):
+                prev[-1][1].extend(lines)
+            else:
+                prev.append([seg, lines])
+    return [[piece if isinstance(piece, _Atomic) else "\n".join(piece)
+             for _, piece in b] for b in boxes]
 
 
 def tex_verbatim(body: str, tally, neutral: bool = False) -> str:
@@ -2425,19 +2457,22 @@ def tex_verbatim(body: str, tally, neutral: bool = False) -> str:
     return "\\begin{Verbatim}[" + opts + "]\n" + body + "\n\\end{Verbatim}\n"
 
 
-def md_to_tex(text: str, tally, neutral: bool = False) -> str:
+def md_to_tex_blocks(text: str, tally, neutral: bool = False) -> list[str]:
+    """Render markdown to LaTeX block by block for _pack_verbatim: a fenced
+    block is returned as its raw text (a plain str, still to be set verbatim,
+    which the packer may cut between lines); every other block is an _Atomic
+    piece of finished LaTeX."""
     def inl(x):
         return tex_inline(x, tally, neutral)
 
-    def verb(x):
-        return tex_verbatim(x, tally, neutral)
-
-    out = []
+    blocks = []
     for tok in md_tokens(text):
+        out = []
         if tok[0] == "para":
             out.append(inl(tok[1]) + "\n\n")
         elif tok[0] == "code":
-            out.append(verb(tok[2]))
+            blocks.append(tok[2])
+            continue
         elif tok[0] == "heading":
             cmd = ["\\subsection*", "\\subsubsection*", "\\paragraph"][min(tok[1] - 1, 2)]
             out.append(cmd + "{" + inl(tok[2]) + "}\n")
@@ -2468,7 +2503,20 @@ def md_to_tex(text: str, tally, neutral: bool = False) -> str:
                 out.append("\\end{" + env + "}\n")
         elif tok[0] == "quote":
             out.append("\\begin{quote}\n" + inl(tok[1]) + "\n\\end{quote}\n")
-    return "".join(out)
+        if out:
+            blocks.append(_Atomic("".join(out)))
+    return blocks
+
+
+def _set_pieces(pieces, tally, neutral) -> str:
+    """Finish packed pieces to LaTeX: raw verbatim text is set in a Verbatim
+    block, an _Atomic piece is already done."""
+    return "".join(x if isinstance(x, _Atomic) else tex_verbatim(x, tally, neutral)
+                   for x in pieces)
+
+
+def md_to_tex(text: str, tally, neutral: bool = False) -> str:
+    return _set_pieces(md_to_tex_blocks(text, tally, neutral), tally, neutral)
 
 
 def html_fragment_to_text(frag: str) -> str:
@@ -2807,9 +2855,6 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     def inl(x):
         return tex_inline(x, tally, neutral)
 
-    def verb(x):
-        return tex_verbatim(x, tally, neutral)
-
     def md(x):
         return md_to_tex(x, tally, neutral)
 
@@ -2861,18 +2906,30 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     def stamp(ts):
         return " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}"
 
-    def verbatim_boxes(env, label, ts, text, lead=""):
-        """One box, or -- for a turn too large for one breakable box --
-        consecutive boxes '(part k/n)'. `lead` (a tool call's input) goes
-        into the first box only."""
-        chunks = _verbatim_chunks(text)
-        if len(chunks) == 1:
-            B.append(box(env, label + stamp(ts), lead + verb(text)))
-            return
-        tally["split_boxes"] += 1
-        for k, chunk in enumerate(chunks, 1):
-            B.append(box(env, label + f" (part {k}/{len(chunks)})" + stamp(ts),
-                         (lead if k == 1 else "") + verb(chunk)))
+    def part_boxes(env, label, ts, boxes, tail=""):
+        """Emit one box, or consecutive boxes titled '(part k/n)' when the
+        content was packed into several. `tail` (inline notes) goes after
+        the last one."""
+        if len(boxes) > 1:
+            tally["split_boxes"] += 1
+        for k, pieces in enumerate(boxes, 1):
+            part = f" (part {k}/{len(boxes)})" if len(boxes) > 1 else ""
+            B.append(box(env, label + part + stamp(ts),
+                         _set_pieces(pieces, tally, neutral)
+                         + (tail if k == len(boxes) else "")))
+
+    def verbatim_boxes(env, label, ts, *segments, tail=""):
+        """Box(es) holding the verbatim segments (a tool call's input, then
+        its output) in order, split when together they exceed what one
+        breakable box can hold."""
+        part_boxes(env, label, ts, _pack_verbatim(segments), tail=tail)
+
+    def md_boxes(env, label, ts, text):
+        """Box(es) holding a markdown turn: a Claude reply that prints a
+        whole file in a fenced block is as large as any paste, so its
+        blocks are packed the same way."""
+        part_boxes(env, label, ts,
+                   _pack_verbatim(md_to_tex_blocks(text, tally, neutral)))
 
     def emit_turns(turns):
         for turn in turns:
@@ -2883,35 +2940,31 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                 verbatim_boxes("humanturn", "HUMAN" + tg, ts, turn["text"].rstrip())
             elif kind == "assistant":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
-                B.append(box("claudeturn", "CLAUDE" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
-                             md(turn.get("text", ""))))
+                md_boxes("claudeturn", "CLAUDE" + tg, ts, turn.get("text", ""))
             elif kind == "thinking":
-                B.append(box("thinkturn", "THINKING" + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
-                             md(turn.get("text", "") or "(no text: display=omitted)")))
+                md_boxes("thinkturn", "THINKING", ts,
+                         turn.get("text", "") or "(no text: display=omitted)")
             elif kind == "tool":
                 err = " [ERROR]" if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
                                    + str(turn.get("label", "")) + err))
-                title = "TOOL: " + head + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}"
+                title = "TOOL: " + head + stamp(ts)
                 if not tool_output:
                     # A bare title box: the call is on the record, its payload is not.
                     B.append("\\begin{toolturn}{" + title + "}\\end{toolturn}\n")
                     continue
-                lead = verb(pretty_tool_input(turn.get("input") or ""))
                 tail = ""
                 if not turn.get("output_text") and not turn.get("resolved"):
                     tail += inl("(no result in the source)") + "\n\n"
                 for _ in turn.get("output_images") or []:
                     tail += inl("[image omitted]") + "\n\n"
+                segments = [pretty_tool_input(turn.get("input") or "")]
                 if turn.get("output_text"):
-                    verbatim_boxes("toolturn", "TOOL: " + head, ts, turn["output_text"], lead=lead)
-                    if tail:
-                        B.append(box("toolturn", "TOOL: " + head + " (images)" + stamp(ts), tail))
-                else:
-                    B.append(box("toolturn", title, lead + tail))
+                    segments.append(turn["output_text"])
+                verbatim_boxes("toolturn", "TOOL: " + head, ts, *segments, tail=tail)
             elif kind == "user_image":
                 B.append(box("humanturn",
-                             "HUMAN - PASTED IMAGE \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
+                             "HUMAN - PASTED IMAGE" + stamp(ts),
                              inl("(image omitted in this format; the HTML "
                                  "archive holds it)") + "\n\n"))
             else:

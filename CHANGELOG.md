@@ -3,6 +3,25 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6.2 — 2026-08-29
+
+**Fixed**
+- A Claude reply or thinking turn that prints a whole file in a fenced
+  block went through the markdown renderer into one unbounded box — the
+  same "TeX capacity exceeded" as 2.6.1 fixed for pastes, reachable through
+  a different door. Markdown turns are now packed by the same rule: the
+  fenced block is cut across *(part k/n)* boxes, the prose around it stays
+  whole and in order.
+- The 2.6.1 box split covered a turn's output only; a tool call's *input*
+  (a `Write` carrying a whole file) still went into one breakable box. Input
+  and output are now packed together into consecutive boxes, the
+  input/output boundary kept as a block boundary, and inline notes
+  (`[image omitted]`, `(no result in the source)`) stay in the call's own
+  box after its output instead of a separate `(images)` box.
+- A trailing newline that pushed a turn just over the limit produced a
+  spurious `(part 2/2)` box reading `(empty)`; blank remainders now join the
+  previous box.
+
 ## 2.6.1 — 2026-08-29
 
 **Fixed**

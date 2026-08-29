@@ -1493,6 +1493,73 @@ try:
               f"tally={tally31['split_boxes']}")
         check("a short turn is still one box", src31.count("HUMAN - P2 ") == 1, "short turn split")
 
+        # The tool's INPUT can be the huge payload too (a Write call carrying a
+        # whole file), and real tool output ends in a newline: neither may
+        # produce one oversized box or a spurious "(empty)" part.
+        t32 = ta.Transcript()
+        big_in = json.dumps({"file_path": "x.py", "content": "\n".join(f"src {i}" for i in range(3200))})
+        t32.turns = [
+            {"kind": "tool", "ts": "2026-02-01T10:00:01Z", "chip": "Write", "label": "x.py",
+             "tool_name": "Write", "input": big_in, "output_text": "ok",
+             "output_images": [], "is_error": False, "resolved": True},
+            {"kind": "tool", "ts": "2026-02-01T10:00:02Z", "chip": "Bash", "label": "y",
+             "tool_name": "Bash", "input": '{"command": "y"}',
+             "output_text": "\n".join(f"row {i}" for i in range(ta._TEX_BOX_MAX_LINES - 1)) + "\n",
+             "output_images": [{"data": ""}], "is_error": False, "resolved": True},
+        ]
+        src32, tally32 = ta.emit_latex(t32, {"title": "t", "session_id": "s", "subtitle": "",
+                                             "summary_text": "", "cost_note": ""}, tool_output=True)
+        blocks32 = re.findall(r"\\begin\{Verbatim\}\[[^\]]*\]\n(.*?)\n\\end\{Verbatim\}", src32, re.S)
+        check("a huge tool input is split into boxes like a huge output",
+              src32.count("\\begin{toolturn}") >= 4 and "(part 1/" in src32 and tally32["split_boxes"] == 1,
+              f"{src32.count(chr(92) + 'begin{toolturn}')} boxes, tally={tally32['split_boxes']}")
+        check("no Verbatim block exceeds the box limit when the input is the big part",
+              blocks32 and max(b.count("\n") + 1 for b in blocks32) <= ta._TEX_BOX_MAX_LINES,
+              f"max {max((b.count(chr(10)) + 1 for b in blocks32), default=0)}")
+        check("the tool's output still follows its split input", "src 3199" in src32 and "ok" in src32, "lost")
+        check("a trailing newline just over the limit does not add an '(empty)' part",
+              "(part 2/2)" not in src32 and "(empty)" not in src32 and "row 1498" in src32,
+              "spurious part or lost rows")
+        check("the image note stays in the tool's own box, after its output",
+              src32.count("[image omitted]") == 1 and "(images)" not in src32
+              and src32.index("row 1498") < src32.index("[image omitted]"),
+              "image note misplaced")
+
+        # A Claude reply (or thinking) that prints a whole file in a fenced
+        # block reaches the same "TeX capacity exceeded" through md_to_tex:
+        # markdown turns must be packed into bounded boxes too, the fence
+        # split across parts and the prose around it kept in order.
+        t33 = ta.Transcript()
+        big_code = "\n".join(f"def f{i}(): return {i}" for i in range(5000))
+        t33.turns = [
+            {"kind": "assistant", "ts": "2026-02-01T10:00:00Z", "tag": "R1",
+             "text": "Here is the whole file:\n\n```python\n" + big_code + "\n```\n\nThat is all."},
+            {"kind": "thinking", "ts": "2026-02-01T10:00:01Z",
+             "text": "Let me recall it.\n\n```\n" + "\n".join(f"mem {i}" for i in range(3200)) + "\n```\n"},
+            {"kind": "assistant", "ts": "2026-02-01T10:00:02Z", "tag": "R2", "text": "Done."},
+        ]
+        src33, tally33 = ta.emit_latex(t33, {"title": "t", "session_id": "s", "subtitle": "",
+                                             "summary_text": "", "cost_note": ""}, tool_output=True)
+        blocks33 = re.findall(r"\\begin\{Verbatim\}\[[^\]]*\]\n(.*?)\n\\end\{Verbatim\}", src33, re.S)
+        check("a Claude reply with a 5,000-line code block becomes 4 boxes",
+              src33.count("\\begin{claudeturn}") == 5 and "CLAUDE - R1 (part 1/4)" in src33
+              and "(part 4/4)" in src33,
+              f"{src33.count(chr(92) + 'begin{claudeturn}')} claudeturn boxes")
+        check("a thinking turn with a huge code block is split too",
+              src33.count("\\begin{thinkturn}") == 3 and "THINKING (part 3/3)" in src33,
+              f"{src33.count(chr(92) + 'begin{thinkturn}')} thinkturn boxes")
+        check("no Verbatim block of a markdown turn exceeds the box limit",
+              blocks33 and max(b.count("\n") + 1 for b in blocks33) <= ta._TEX_BOX_MAX_LINES,
+              f"max {max((b.count(chr(10)) + 1 for b in blocks33), default=0)}")
+        check("the prose around the split fence survives in order",
+              src33.index("Here is the whole file") < src33.index("def f0()")
+              < src33.index("def f4999()") < src33.index("That is all"),
+              "prose lost or reordered")
+        check("markdown splits are counted with the verbatim ones",
+              tally33["split_boxes"] == 2, f"tally={tally33['split_boxes']}")
+        check("a short Claude reply is still one box",
+              src33.count("CLAUDE - R2 ") == 1 and "R2 (part" not in src33, "short reply split")
+
         # ------------------------------------------------------------------
         print("\n[29] Documentation set and its consistency with the CLI")
         REPO = HERE.parent
