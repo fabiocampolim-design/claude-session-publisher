@@ -3,6 +3,14 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6.3 — 2026-08-29
+
+**Changed**
+- Licence: MIT → **Apache License 2.0** (`LICENSE`, `NOTICE`, SPDX header).
+  Same freedoms for users; adds an explicit patent grant, a contributor
+  licence and a fuller limitation of liability. The README's Licence section
+  carries the disclaimer and a non-affiliation note, and the suite guards both.
+
 ## 2.6.2 — 2026-08-29
 
 **Fixed**

@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.6.2"
+subtitle: "transcript_archiver.py v2.6.3"
 ---
 
 # claude-session-publisher — User Manual

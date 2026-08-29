@@ -4,7 +4,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
 [![Dependencies: stdlib only](https://img.shields.io/badge/dependencies-stdlib%20only-brightgreen)](transcript_archiver.py)
 [![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#requirements)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 Turn a Claude Code session into a single self-contained document — HTML, plain
 text, Markdown, LaTeX or PDF — with a fidelity report proving nothing was
@@ -326,7 +326,7 @@ survival testing. Two more days of review-driven releases followed (2.4 →
 2.6, August 28–29: a full project review, an independent code-review pass,
 survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded), bringing the history to
-34 commits.
+35 commits.
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
@@ -346,15 +346,25 @@ scientific papers use):
 
 ## Licence
 
-MIT — see `LICENSE`.
+Apache License 2.0 — see `LICENSE` and `NOTICE`. You may use, modify and
+redistribute it, including commercially, provided the licence and notice
+travel with it; contributions are accepted under the same terms (section 5).
 
 ### Disclaimer
 
-This software is provided **as is**, without warranty of any kind, express
-or implied, including but not limited to the warranties of merchantability,
-fitness for a particular purpose and non-infringement. In no event shall the
-author be liable for any claim, damages or other liability — whether in
-contract, tort or otherwise — arising from, out of or in connection with the
-software or its use. You alone are responsible for using it lawfully, for
-the transcripts and data you feed it and publish with it, and for complying
-with the terms of any third-party service or content it touches.
+This software is provided **as is**, without warranties or conditions of any
+kind, express or implied, including but not limited to any warranty of
+merchantability, fitness for a particular purpose, title or non-infringement.
+In no event shall the author be liable for any damages of any character —
+direct, indirect, special, incidental or consequential — or for any other
+claim or liability, whether in contract, tort or otherwise, arising from,
+out of or in connection with the software or its use, even if advised of the
+possibility of such damages (Apache License 2.0, sections 7 and 8).
+You alone are responsible for using it lawfully, for the transcripts and
+data you feed it and publish with it, and for complying with the terms of
+any third-party service or content it touches.
+
+This is an independent project. It is not affiliated with, endorsed by or
+supported by Anthropic; *Claude* and *Claude Code* are trademarks of
+Anthropic, PBC, used here only to name the software whose transcripts this
+tool archives.

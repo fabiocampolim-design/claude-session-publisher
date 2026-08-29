@@ -1620,9 +1620,9 @@ try:
         # must survive every rewrite -- in LICENSE and, visibly, in the README.
         licence = (REPO / "LICENSE").read_text(encoding="utf-8", errors="replace")
         check("LICENSE disclaims warranty and liability",
-              "WITHOUT WARRANTY OF ANY KIND" in licence and "BE LIABLE" in licence, "clause missing")
+              "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND" in licence and "Limitation of Liability" in licence, "clause missing")
         check("README carries a visible Disclaimer under Licence",
-              "### Disclaimer" in readme and "without warranty of any kind" in readme
+              "### Disclaimer" in readme and "without warrant" in readme
               and "liable" in readme and readme.index("## Licence") < readme.index("### Disclaimer"),
               "disclaimer missing")
     finally:

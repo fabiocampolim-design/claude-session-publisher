@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Fabio Campolim
 """
 transcript_archiver.py -- turn a Claude conversation into a self-contained
 document (HTML, plain text, Markdown, LaTeX or PDF) with a fidelity report
@@ -55,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6.2"
+VERSION = "2.6.3"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
