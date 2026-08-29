@@ -3,6 +3,21 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6.1 — 2026-08-29
+
+**Fixed**
+- A single enormous verbatim turn (a 9,614-line paste) inside one breakable
+  LaTeX box exhausted TeX's main memory ("TeX capacity exceeded") — 2 of 62
+  real sessions failed the full PDF pass. Turns beyond 1,500 typeset lines
+  are now split into consecutive boxes titled *(part k/n)*, the document
+  says so, and nothing is omitted. Measured: 4,000 lines in one box
+  compiles, 9,614 does not; the split version compiles.
+
+**Validated**
+- Full LaTeX/PDF pass over every chain-best real session: 62 sessions,
+  5,109 pages, 66 minutes with `--tool-output off`; the two failures above
+  were the only ones and are fixed.
+
 ## 2.6 — 2026-08-29
 
 **Added**

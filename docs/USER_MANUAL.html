@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.6</p>
+<p class="subtitle">transcript_archiver.py v2.6.1</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -645,6 +645,12 @@ you can restyle them from your preamble.</li>
 (NULs from UTF-16 console captures, backspaces), are removed and
 <strong>counted in the document</strong>. Lines over 500 characters are
 hard-wrapped so TeX can typeset them; the count is stated.</li>
+<li>A turn longer than 1,500 typeset lines (a huge paste or tool output)
+is split into consecutive boxes titled <em>(part k/n)</em>: one
+breakable box holding it whole exhausts TeX’s memory. The document
+states how many turns were split; nothing is omitted.</li>
+<li>Validated by a full pass over a real 62-session archive (5,109
+pages, <code>--tool-output off</code>, August 2026).</li>
 <li>Cost of full tool I/O, measured: a 636-record session → 643 pages in
 about four minutes; a 1,655-record session is 92 pages with
 <code>--tool-output off</code> and 260 with it on.</li>
@@ -715,7 +721,7 @@ and is deferred.</li>
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>240 checks against the synthetic sessions in <code>examples/</code>
+<p>247 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>

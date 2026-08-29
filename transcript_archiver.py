@@ -55,7 +55,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6"
+VERSION = "2.6.1"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -2368,6 +2368,36 @@ def tex_inline(s: str, tally, neutral: bool = False) -> str:
 
 _TEX_HARD_WRAP = 500
 
+# A breakable tcolorbox first typesets its whole content into one box, so a
+# single enormous verbatim turn exhausts TeX's main memory: on the real
+# archive a 9,614-line paste failed with "TeX capacity exceeded" while 4,000
+# lines in one box compiled and the same paste as consecutive 1,500-line
+# boxes compiled. Turns beyond this many (wrapped) lines are split into
+# consecutive boxes titled "(part k/n)", and the document says so.
+_TEX_BOX_MAX_LINES = 1500
+
+
+def _verbatim_chunks(text: str) -> list[str]:
+    """Split verbatim text into pieces of at most _TEX_BOX_MAX_LINES typeset
+    lines, counting the hard wrap a long line will get. One piece for the
+    common case."""
+    lines = text.split("\n")
+    def cost(ln):
+        return max(1, -(-len(ln) // _TEX_HARD_WRAP))
+    if sum(cost(ln) for ln in lines) <= _TEX_BOX_MAX_LINES:
+        return [text]
+    chunks, cur, n = [], [], 0
+    for ln in lines:
+        c = cost(ln)
+        if cur and n + c > _TEX_BOX_MAX_LINES:
+            chunks.append("\n".join(cur))
+            cur, n = [], 0
+        cur.append(ln)
+        n += c
+    if cur:
+        chunks.append("\n".join(cur))
+    return chunks
+
 
 def tex_verbatim(body: str, tally, neutral: bool = False) -> str:
     body = tex_drop_unprintable(strip_ansi(body), tally)
@@ -2828,14 +2858,29 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
         return ("\\begin{" + env + "}{" + title + "}\n" + inner
                 + "\\end{" + env + "}\n")
 
+    def stamp(ts):
+        return " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}"
+
+    def verbatim_boxes(env, label, ts, text, lead=""):
+        """One box, or -- for a turn too large for one breakable box --
+        consecutive boxes '(part k/n)'. `lead` (a tool call's input) goes
+        into the first box only."""
+        chunks = _verbatim_chunks(text)
+        if len(chunks) == 1:
+            B.append(box(env, label + stamp(ts), lead + verb(text)))
+            return
+        tally["split_boxes"] += 1
+        for k, chunk in enumerate(chunks, 1):
+            B.append(box(env, label + f" (part {k}/{len(chunks)})" + stamp(ts),
+                         (lead if k == 1 else "") + verb(chunk)))
+
     def emit_turns(turns):
         for turn in turns:
             ts = (turn.get("ts") or "")[:19].replace("T", " ")
             kind = turn["kind"]
             if kind == "human":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
-                B.append(box("humanturn", "HUMAN" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
-                             verb(turn["text"].rstrip())))
+                verbatim_boxes("humanturn", "HUMAN" + tg, ts, turn["text"].rstrip())
             elif kind == "assistant":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
                 B.append(box("claudeturn", "CLAUDE" + tg + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
@@ -2852,14 +2897,18 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                     # A bare title box: the call is on the record, its payload is not.
                     B.append("\\begin{toolturn}{" + title + "}\\end{toolturn}\n")
                     continue
-                inner = verb(pretty_tool_input(turn.get("input") or ""))
-                if turn.get("output_text"):
-                    inner += verb(turn["output_text"])
-                elif not turn.get("resolved"):
-                    inner += inl("(no result in the source)") + "\n\n"
+                lead = verb(pretty_tool_input(turn.get("input") or ""))
+                tail = ""
+                if not turn.get("output_text") and not turn.get("resolved"):
+                    tail += inl("(no result in the source)") + "\n\n"
                 for _ in turn.get("output_images") or []:
-                    inner += inl("[image omitted]") + "\n\n"
-                B.append(box("toolturn", title, inner))
+                    tail += inl("[image omitted]") + "\n\n"
+                if turn.get("output_text"):
+                    verbatim_boxes("toolturn", "TOOL: " + head, ts, turn["output_text"], lead=lead)
+                    if tail:
+                        B.append(box("toolturn", "TOOL: " + head + " (images)" + stamp(ts), tail))
+                else:
+                    B.append(box("toolturn", title, lead + tail))
             elif kind == "user_image":
                 B.append(box("humanturn",
                              "HUMAN - PASTED IMAGE \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
@@ -2867,8 +2916,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                                  "archive holds it)") + "\n\n"))
             else:
                 badge = esc(shorten(str(turn.get("badge", kind))))
-                B.append(box("systurn", badge + " \\hfill {\\normalfont\\scriptsize\\ttfamily " + esc(ts) + "}",
-                             verb((turn.get("text") or "").rstrip())))
+                verbatim_boxes("systurn", badge, ts, (turn.get("text") or "").rstrip())
 
     emit_turns(t.turns)
     if agents and subagents_on:
@@ -2908,6 +2956,11 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     if tally["hardwrapped"]:
         notes.append(format(tally["hardwrapped"], ",") + " very long lines were hard-wrapped "
                      "at " + str(_TEX_HARD_WRAP) + " characters so TeX could typeset them.")
+    if tally["split_boxes"]:
+        notes.append(format(tally["split_boxes"], ",") + " very large turn(s) were split into "
+                     "consecutive boxes of at most " + format(_TEX_BOX_MAX_LINES, ",")
+                     + " lines each, titled (part k/n), so TeX could hold them in memory; "
+                     "nothing was omitted.")
     if notes:
         notes.append("The HTML archive holds all of it unaltered.")
         B[dropnote_slot] = inl(" ".join(notes)) + "\n\n"

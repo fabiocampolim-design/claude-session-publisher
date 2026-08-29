@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.6"
+subtitle: "transcript_archiver.py v2.6.1"
 ---
 
 # claude-session-publisher — User Manual
@@ -250,6 +250,12 @@ machine's font database.
   from UTF-16 console captures, backspaces), are removed and **counted in the
   document**. Lines over 500 characters are hard-wrapped so TeX can typeset
   them; the count is stated.
+- A turn longer than 1,500 typeset lines (a huge paste or tool output) is
+  split into consecutive boxes titled *(part k/n)*: one breakable box holding
+  it whole exhausts TeX's memory. The document states how many turns were
+  split; nothing is omitted.
+- Validated by a full pass over a real 62-session archive (5,109 pages,
+  `--tool-output off`, August 2026).
 - Cost of full tool I/O, measured: a 636-record session → 643 pages in about
   four minutes; a 1,655-record session is 92 pages with `--tool-output off`
   and 260 with it on.
@@ -314,7 +320,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-240 checks against the synthetic sessions in `examples/` (no real transcript
+247 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

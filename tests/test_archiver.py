@@ -1458,6 +1458,42 @@ try:
             shutil.rmtree(tmp30, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # Full LaTeX pass over 62 real sessions (2026-08-29): two failed with
+        # "TeX capacity exceeded" -- a breakable tcolorbox holding a 9,614-line
+        # verbatim turn. Measured: 4,000 lines in one box compiles, 9,614 does
+        # not; the same block as consecutive 1,500-line boxes compiles. So a
+        # huge verbatim turn is split into consecutive boxes, and the page says so.
+        print("\n[31] Huge verbatim turns are split into consecutive LaTeX boxes")
+        t31 = ta.Transcript()
+        big_h = "\n".join(f"line {i} of a pasted log" for i in range(5000))
+        big_o = "\n".join(f"out {i}" for i in range(4000))
+        t31.turns = [
+            {"kind": "human", "ts": "2026-02-01T10:00:00Z", "text": big_h, "html": "", "tag": "P1"},
+            {"kind": "tool", "ts": "2026-02-01T10:00:01Z", "chip": "Bash", "label": "x",
+             "tool_name": "Bash", "input": '{"command": "x"}', "output_text": big_o,
+             "output_images": [], "is_error": False, "resolved": True},
+            {"kind": "human", "ts": "2026-02-01T10:00:02Z", "text": "short", "html": "", "tag": "P2"},
+        ]
+        src31, tally31 = ta.emit_latex(t31, {"title": "t", "session_id": "s", "subtitle": "",
+                                             "summary_text": "", "cost_note": ""}, tool_output=True)
+        check("a 5,000-line human turn becomes 4 boxes",
+              src31.count("\\begin{humanturn}") == 5, f"{src31.count(chr(92) + 'begin{humanturn}')} humanturn boxes")
+        check("split boxes are numbered in their titles",
+              "(part 1/4)" in src31 and "(part 4/4)" in src31, "no part numbering")
+        check("a 4,000-line tool output becomes 3 boxes",
+              src31.count("\\begin{toolturn}") == 3, f"{src31.count(chr(92) + 'begin{toolturn}')} toolturn boxes")
+        blocks31 = re.findall(r"\\begin\{Verbatim\}\[[^\]]*\]\n(.*?)\n\\end\{Verbatim\}", src31, re.S)
+        check("no Verbatim block exceeds the box limit",
+              blocks31 and max(b.count("\n") + 1 for b in blocks31) <= ta._TEX_BOX_MAX_LINES,
+              f"max {max((b.count(chr(10)) + 1 for b in blocks31), default=0)}")
+        check("every line of the big turn survives the split",
+              all(f"line {i} of a pasted log" in src31 for i in (0, 1499, 1500, 4999)), "lines lost")
+        check("the split is counted and stated in the document",
+              tally31["split_boxes"] == 2 and "split into consecutive boxes" in src31,
+              f"tally={tally31['split_boxes']}")
+        check("a short turn is still one box", src31.count("HUMAN - P2 ") == 1, "short turn split")
+
+        # ------------------------------------------------------------------
         print("\n[29] Documentation set and its consistency with the CLI")
         REPO = HERE.parent
         for rel in ("AGENTS.md", "CHANGELOG.md", "docs/USER_MANUAL.md",
