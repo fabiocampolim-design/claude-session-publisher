@@ -623,14 +623,36 @@ def classify_user_string(rec: dict, text: str, scheduled_prompts: set[str]) -> t
 
 class SessionFile:
     __slots__ = ("sid", "path", "uuids", "first", "last", "records", "title",
-                 "subagents", "source")
+                 "subagents", "source", "conv_uuids")
 
-    def __init__(self, sid, path, uuids, first, last, records, title):
+    def __init__(self, sid, path, uuids, first, last, records, title, conv_uuids=None):
         self.sid, self.path = sid, path
         self.uuids, self.first, self.last = uuids, first, last
         self.records, self.title = records, title
         self.subagents = 0          # subagent transcripts filed under this session
         self.source = "claude-code"  # or "cowork" (Claude Desktop local agent)
+        # The exchanges themselves: assistant records and typed prompts. A
+        # resume after /compact carries these forward but not the old file's
+        # compaction tail, so continuation-vs-fork is judged on them alone.
+        self.conv_uuids = conv_uuids if conv_uuids is not None else set(uuids)
+
+
+def _is_conversation_record(obj: dict) -> bool:
+    rtype = obj.get("type")
+    if rtype == "assistant":
+        return True
+    if rtype != "user" or obj.get("isCompactSummary"):
+        return False
+    msg = obj.get("message") or {}
+    if not isinstance(msg.get("content"), str):
+        return False                      # tool results, injected blocks
+    origin = obj.get("origin")
+    if isinstance(origin, dict) and origin.get("kind"):
+        return origin["kind"] == "human"
+    src = obj.get("promptSource")
+    if src:
+        return src in ("typed", "suggestion_accepted")
+    return not msg["content"].lstrip().startswith("<")   # older records: markers are injected
 
 
 def scan_sessions(root: Path) -> dict[str, SessionFile]:
@@ -652,6 +674,7 @@ def scan_sessions(root: Path) -> dict[str, SessionFile]:
                 subagents[path.parts[i - 1]] += 1
             continue
         uuids: set[str] = set()
+        conv: set[str] = set()
         first = last = None
         count = 0
         title = None
@@ -668,6 +691,8 @@ def scan_sessions(root: Path) -> dict[str, SessionFile]:
                     u = obj.get("uuid")
                     if u:
                         uuids.add(u)
+                        if _is_conversation_record(obj):
+                            conv.add(u)
                     ts = obj.get("timestamp")
                     if ts:
                         if first is None or ts < first:
@@ -678,7 +703,7 @@ def scan_sessions(root: Path) -> dict[str, SessionFile]:
                         title = obj["aiTitle"]
         except OSError:
             continue
-        found[path.stem] = SessionFile(path.stem, path, uuids, first, last, count, title)
+        found[path.stem] = SessionFile(path.stem, path, uuids, first, last, count, title, conv)
     for sid, n in subagents.items():
         if sid in found:
             found[sid].subagents = n
@@ -737,13 +762,19 @@ def resolve_chain(sid: str, sessions: dict[str, SessionFile]) -> tuple[str, list
         overlap = shared / min(len(base.uuids), len(info.uuids))
         if overlap < 0.5:
             continue
-        # A continuation can drop a stray bookkeeping record or two, so strict set
-        # containment mislabels it a "fork" -- 6eb46cd7 carries 1353 of 3c2a527b's
-        # 1355 uuids (the 2 it lacks: a bridge_status record and an empty thinking
-        # block) and is plainly the same conversation continued.
+        # A continuation can drop bookkeeping: a stray bridge_status record, an
+        # empty thinking block, or -- after /compact -- the whole compaction
+        # tail (attachments, the boundary, the summary; 18 records on one real
+        # pair). Strict set containment mislabels those a "fork". So the
+        # judgement is made on the *exchanges*: a file that carries every
+        # prompt and response of this one (give or take a couple) and goes on
+        # is the same conversation continued; one missing exchanges diverged.
         dropped = len(base.uuids - info.uuids)
-        tolerance = max(2, len(base.uuids) // 100)
-        if dropped == 0 or (dropped <= tolerance and len(info.uuids) > len(base.uuids)):
+        base_conv = getattr(base, "conv_uuids", base.uuids)
+        info_conv = getattr(info, "conv_uuids", info.uuids)
+        dropped_conv = len(base_conv - info.uuids)
+        tolerance = max(2, len(base_conv) // 100)
+        if dropped == 0 or (dropped_conv <= tolerance and len(info_conv) > len(base_conv)):
             rel = "superset"
         elif base.uuids >= info.uuids:
             rel = "subset"
@@ -756,7 +787,10 @@ def resolve_chain(sid: str, sessions: dict[str, SessionFile]) -> tuple[str, list
         # Only a superset is the same conversation continued. A fork shares
         # history but then diverges: archiving it in place of the requested id
         # would silently swap in a different conversation, however large.
-        if rel == "superset" and len(info.uuids) > len(sessions[best].uuids):
+        # Compared on exchanges, not raw uuids: the old file's compaction tail
+        # can make it the *larger* file while holding less conversation.
+        best_conv = getattr(sessions[best], "conv_uuids", sessions[best].uuids)
+        if rel == "superset" and len(info_conv) > len(best_conv):
             best = other
     related.sort(key=lambda r: -r["own_uuids"])
     return best, related

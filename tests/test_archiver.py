@@ -1227,6 +1227,95 @@ try:
             shutil.rmtree(tmp15e, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # A session resumed after /compact: the continuation file carries every
+        # exchange but not the old file's compaction tail (attachments, the
+        # compact_boundary, the summary record, the /compact command). Those
+        # are bookkeeping, not conversation, so the continuation must still
+        # count as the same conversation continued -- seen on a real pair
+        # where 18 such records made the tool call it a fork.
+        print("\n[25f] A post-compaction resume is a continuation, not a fork")
+        tmp15f = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25f-"))
+        try:
+            proj = tmp15f / "projects" / "p"
+            proj.mkdir(parents=True)
+            OLD = "ffffffff-0000-4000-8000-000000000001"
+            NEW = "ffffffff-0000-4000-8000-000000000002"
+            convo = []
+            for i in range(30):
+                convo.append({"type": "user", "uuid": f"h{i}", "sessionId": OLD,
+                              "timestamp": f"2026-02-01T10:{i:02d}:00Z", "promptSource": "typed",
+                              "origin": {"kind": "human"},
+                              "message": {"role": "user", "content": f"prompt {i}"}})
+                convo.append({"type": "assistant", "uuid": f"a{i}", "sessionId": OLD,
+                              "timestamp": f"2026-02-01T10:{i:02d}:30Z", "requestId": f"r{i}",
+                              "message": {"role": "assistant", "model": "claude-fable-5",
+                                          "content": [{"type": "text", "text": f"answer {i}"}],
+                                          "usage": {"input_tokens": 1, "output_tokens": 1}}})
+            tail = [{"type": "attachment", "uuid": f"att{i}", "sessionId": OLD,
+                     "timestamp": "2026-02-01T11:00:00Z",
+                     "attachment": {"type": "hook_success", "hookName": "x", "exitCode": 0}}
+                    for i in range(12)]
+            tail += [{"type": "user", "uuid": "cmd1", "sessionId": OLD,
+                      "timestamp": "2026-02-01T11:01:00Z", "promptSource": "system",
+                      "message": {"role": "user", "content": "<command-name>/compact</command-name>"}},
+                     {"type": "system", "uuid": "cb1", "sessionId": OLD, "subtype": "compact_boundary",
+                      "timestamp": "2026-02-01T11:01:05Z", "content": "",
+                      "compactMetadata": {"trigger": "manual", "preTokens": 100, "postTokens": 10}},
+                     {"type": "user", "uuid": "sum1", "sessionId": OLD, "isCompactSummary": True,
+                      "timestamp": "2026-02-01T11:01:06Z",
+                      "message": {"role": "user", "content": "This session is being continued from a previous conversation"}}]
+            cost_a = {"type": "cost-state", "sessionId": OLD, "totalCostUSD": 2.5,
+                      "startTime": 1769940000000, "modelUsage": {"claude-fable-5": {"costUSD": 2.5}}}
+            later = [{"type": "user", "uuid": f"l{i}", "sessionId": NEW,
+                      "timestamp": f"2026-02-01T12:{i:02d}:00Z", "promptSource": "typed",
+                      "origin": {"kind": "human"},
+                      "message": {"role": "user", "content": f"later {i}"}} for i in range(5)]
+            cost_b = {"type": "cost-state", "sessionId": NEW, "totalCostUSD": 4.0,
+                      "startTime": 1769947200000, "modelUsage": {"claude-fable-5": {"costUSD": 4.0}}}
+            (proj / f"{OLD}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in convo + tail + [cost_a]) + "\n", encoding="utf-8")
+            (proj / f"{NEW}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in convo + later + [cost_b]) + "\n", encoding="utf-8")
+            ss = ta.scan_sessions(tmp15f / "projects")
+            best, rel = ta.resolve_chain(OLD, ss)
+            check("post-compaction continuation is classed as a superset",
+                  rel and rel[0]["relation"] == "superset", str(rel))
+            check("post-compaction continuation is followed", best == NEW, best[:8])
+            check("bookkeeping-only drop count is still reported",
+                  rel and rel[0]["dropped"] == 15, str(rel))
+            # A genuine fork (conversation diverged) must still be refused.
+            FORK = "ffffffff-0000-4000-8000-000000000003"
+            # shares 40 of the 60 exchange records (overlap 0.53, above the
+            # 0.5 gate) but lacks the last 10 exchanges: diverged, not continued.
+            div = convo[:40] + [{"type": "user", "uuid": f"f{i}", "sessionId": FORK,
+                                 "timestamp": f"2026-02-01T13:{i:02d}:00Z", "promptSource": "typed",
+                                 "origin": {"kind": "human"},
+                                 "message": {"role": "user", "content": f"elsewhere {i}"}}
+                                for i in range(40)]
+            (proj / f"{FORK}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in div) + "\n", encoding="utf-8")
+            ss = ta.scan_sessions(tmp15f / "projects")
+            best2, rel2 = ta.resolve_chain(OLD, ss)
+            check("a diverged conversation is still a fork and not followed",
+                  best2 == NEW and any(r["session_id"] == FORK and r["relation"] == "fork" for r in rel2),
+                  str([(r["session_id"][:8], r["relation"]) for r in rel2]))
+            out15f = tmp15f / "out"
+            p = subprocess.run([sys.executable, str(SCRIPT), OLD, "--format", "html",
+                                "--projects-root", str(tmp15f / "projects"),
+                                "--archive-dir", str(out15f)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            page = "".join(f.read_text(encoding="utf-8", errors="replace")
+                           for f in out15f.glob("*.html")) if out15f.exists() else ""
+            m = re.search(r'id="archive-meta">(.*?)</script>', page, re.S)
+            meta = json.loads(m.group(1)) if m else {}
+            check("archiving the old id yields the continuation with both cost runs",
+                  meta.get("session_id") == NEW and meta.get("reported_cost_usd") == 6.5
+                  and meta.get("reported_cost_partial") is False,
+                  str({k: meta.get(k) for k in ("session_id", "reported_cost_usd", "reported_cost_partial")}))
+        finally:
+            shutil.rmtree(tmp15f, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         print("\n[26] Subagents of the requested session survive chain resolution")
         tmp16 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test26-"))
         try:

@@ -17,6 +17,12 @@ Fixes from the code review of 2.5.
   only when coverage was complete.
 - A malformed `cost-state` record (non-dict `modelUsage`, non-finite
   `startTime`, non-numeric totals) is skipped instead of aborting the export.
+- Chain resolution judges continuation-vs-fork on the *exchanges* (typed
+  prompts and assistant records), not on every uuid: a session resumed after
+  `/compact` carries the conversation forward but not the old file's
+  compaction tail (attachments, boundary, summary — 18 records on a real
+  pair), which made the tool call it a fork and archive only half. The
+  drop count is still reported; a file missing exchanges is still a fork.
 - `AGENTS.md` and the user manual describe the reported cost, its metadata
   keys and the index behaviour; the suite checks they do.
 - Index detail expression tidied.
