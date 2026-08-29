@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.5.1"
+subtitle: "transcript_archiver.py v2.6"
 ---
 
 # claude-session-publisher — User Manual
@@ -213,7 +213,19 @@ facts, contents. Keys: `j`/`k` jump between human turns.
 another transcript that is archived), **legacy v1**, or **not archived**;
 lists archives whose source is not on disk (claude.ai imports, deleted
 transcripts); and shows an activity column whose ages decay in the browser.
-Headers sort on click. `--watch` keeps it regenerating.
+Headers sort on click. `--watch` keeps it regenerating. A first `--index`
+into a directory that does not exist yet creates it.
+
+**Search across every archive.** The index page carries a search box over
+every human prompt of every archive — all pages of a paginated archive and
+subagent prompts (`A1.P1`) included — read back from the archives' own HTML
+at index time, so archives written by earlier versions and claude.ai imports
+are covered alike. Typing two or more characters lists the matching prompts
+(session, tag, title, highlighted snippet; first 200 shown), each linking
+straight to the prompt's anchor on its page, and narrows the session table to
+the sessions that matched. Prompts are capped at 400 characters in the
+index; Claude's responses are searchable within each page, not across
+archives (see limitations).
 
 ## 5. LaTeX and PDF
 
@@ -292,6 +304,9 @@ These are the honest edges. Each is stated on the page where it applies.
   in CI; macOS untested beyond the cowork path being defined.
 - **Live index decay is one-directional**: a session can go quiet on screen
   but cannot become active without regeneration (`--watch`).
+- **Cross-archive search covers prompts, not responses** (and the first 400
+  characters of each prompt). Responses are searchable within a page.
+  Indexing responses would multiply the index file's size and is deferred.
 
 ## 8. Tests
 
@@ -299,7 +314,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-225 checks against the synthetic sessions in `examples/` (no real transcript
+240 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

@@ -79,7 +79,7 @@ unless `--out STEM` names a single archive's path stem:
 | `.md` | Markdown for note vaults; pastes fenced with computed fence length |
 | `.tex` / `_fragment.tex` | XeLaTeX standalone / engine-neutral body |
 | `.pdf` | xelatex two passes |
-| `index.html` | status of every session on disk + archives from imports |
+| `index.html` | status of every session on disk + archives from imports; embeds `<script type="application/json" id="search-index">` — every human prompt of every archive (`{session_id, title, file, prompts:[{tag, href, text}]}`) powering the page's cross-archive prompt search. The directory is created if missing |
 | `logs/<timestamp>_<label>.log` | audit log: versions, exact command, all messages, outcome (`--log-dir` relocates) |
 
 Console: `wrote <file> (<MB>)`, then the turn census, record reconciliation,

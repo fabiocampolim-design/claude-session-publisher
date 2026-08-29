@@ -1402,6 +1402,62 @@ try:
             shutil.rmtree(tmp18, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # Review #2 (2026-08-28): --index into an archive dir that does not
+        # exist yet crashed (build() creates its directory; build_index did
+        # not), and the last roadmap gap -- searching every archive from the
+        # index page -- gets a prompt index embedded in index.html.
+        print("\n[30] --index creates the archive directory and indexes prompts across archives")
+        tmp30 = pathlib.Path(tempfile.mkdtemp(prefix="ta-test30-"))
+        try:
+            fresh = tmp30 / "does" / "not" / "exist"
+            p = subprocess.run([sys.executable, str(SCRIPT), "--index",
+                                "--archive-dir", str(fresh), "--projects-root", str(ROOT)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("--index into a missing archive dir exits 0", p.returncode == 0, p.stderr[-300:])
+            check("--index created the directory and wrote index.html",
+                  (fresh / "index.html").exists(), "no index.html")
+            # archive two sessions (one paginated), then index; every human
+            # prompt of every archive must be findable from the index page.
+            arch = tmp30 / "arch"
+            p = run(SAMPLE, "html", arch, extra=("--paginate", "4"))
+            check("paginated sample archived", p.returncode == 0, p.stderr[-300:])
+            SHOW = "0000c0de-cafe-4000-8000-00000000f00d"
+            p = run(SHOW, "html", arch)
+            check("showcase archived", p.returncode == 0, p.stderr[-300:])
+            p = subprocess.run([sys.executable, str(SCRIPT), "--index",
+                                "--archive-dir", str(arch), "--projects-root", str(ROOT)],
+                               capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("index build exits 0", p.returncode == 0, p.stderr[-300:])
+            idx = (arch / "index.html").read_text(encoding="utf-8", errors="replace")
+            m = re.search(r'<script type="application/json" id="search-index">(.*?)</script>', idx, re.S)
+            check("index embeds a search index", m is not None, "no search-index block")
+            sidx = json.loads(m.group(1).replace("<\\/", "</")) if m else []
+            texts = {(e["session_id"][:8], pr["tag"]): pr for e in sidx for pr in e["prompts"]}
+            t30 = ta.parse_transcript(source_of(SAMPLE), 4000)
+            ta.assign_tags(t30)
+            wanted = [(SAMPLE[:8], x["tag"], x["text"]) for x in t30.turns if x["kind"] == "human"]
+            missing = [tag for sid8, tag, _ in wanted if (sid8, tag) not in texts]
+            check("every prompt of a paginated archive is in the search index (all pages)",
+                  wanted and not missing, f"missing {missing}")
+            found = [(texts.get((s, tg)) or {}, tg, tx) for s, tg, tx in wanted]
+            check("search entries carry the prompt text",
+                  not missing and all(e.get("text", "")[:40] == tx.strip()[:40] for e, _, tx in found),
+                  "text mismatch")
+            check("search entries deep-link to the page holding the prompt",
+                  not missing and all(e.get("href", "").endswith(f"#{tg}") and
+                                      (arch / e["href"].split("#")[0]).exists()
+                                      for e, tg, _ in found),
+                  str([e.get("href") for e, _, _ in found][:3]))
+            check("showcase prompts are indexed too",
+                  any(e["session_id"] == SHOW and e["prompts"] for e in sidx), "showcase missing")
+            js = idx.split("<script>")[-1]
+            check("index page has a cross-archive search box",
+                  'id="archive-search"' in idx and "archive-search" in js, "no search UI")
+            check("search results container exists", 'id="search-results"' in idx, "missing")
+        finally:
+            shutil.rmtree(tmp30, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         print("\n[29] Documentation set and its consistency with the CLI")
         REPO = HERE.parent
         for rel in ("AGENTS.md", "CHANGELOG.md", "docs/USER_MANUAL.md",
@@ -1430,6 +1486,18 @@ try:
               "cost-state" in manual and "reported cost" in manual.lower(), "missing")
         check("AGENTS.md no longer calls cost list-price only",
               "reported" in agents.lower() and "cost-state" in agents, "missing")
+        check("README names the reported cost beside the list estimate",
+              "reported cost" in readme.lower() or "cost-state" in readme, "missing")
+        check("README names cross-archive search as shipped",
+              "search" in readme.lower() and "across" in readme.lower()
+              and "remaining step" not in readme, "roadmap still lists it")
+        # The release commit that lands a README edit is itself one commit,
+        # so the stated count may run one ahead of HEAD before it is made.
+        n_commits = int(subprocess.run(["git", "rev-list", "--count", "HEAD"], capture_output=True,
+                                       text=True, cwd=str(REPO)).stdout.strip() or 0)
+        check("README's build story counts the commits on main",
+              any(f"{n} commits" in readme for n in (n_commits, n_commits + 1)),
+              f"HEAD has {n_commits}")
         check("README no longer says 'scribe'", "scribe" not in readme.lower(), "found")
         check("README opening names Markdown among the formats",
               "Markdown" in "\n".join(readme.splitlines()[:14]), "not in opening")

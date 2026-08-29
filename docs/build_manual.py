@@ -11,7 +11,6 @@ just because a tool is missing.
 """
 from __future__ import annotations
 
-import html
 import importlib.util
 import re
 import shutil

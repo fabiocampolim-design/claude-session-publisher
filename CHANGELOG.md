@@ -3,6 +3,27 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6 — 2026-08-29
+
+**Added**
+- **Search across every archive from the index page.** `--index` embeds
+  every human prompt of every archive (all pages of a paginated one,
+  subagent prompts included) with a deep link to its `#P` anchor; the search
+  box on `index.html` lists matching prompts with a highlighted snippet and
+  narrows the session table to the sessions that matched. Responses remain
+  searchable within a page.
+- CI also runs on macOS.
+
+**Fixed**
+- `--index` into an archive directory that did not exist yet crashed; it now
+  creates the directory, as an export does.
+- `docs/build_manual.py` unused import.
+
+**Docs**
+- README names the reported cost beside the list estimate, describes
+  cross-archive search, and its build story covers the review-driven
+  releases; the suite checks those claims stay current.
+
 ## 2.5.1 — 2026-08-28
 
 Fixes from the code review of 2.5.

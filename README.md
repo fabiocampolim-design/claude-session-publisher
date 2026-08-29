@@ -86,7 +86,10 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
 - **Usage and cost accounting** — tokens per model, deduped per `requestId`
   (naively summing the records over-reports output ~2.3× on tool-heavy
   sessions), with cache reads, 5-minute vs 1-hour cache writes, and a
-  list-price cost estimate.
+  list-price cost estimate — **beside Claude Code's own reported cost** from
+  its `cost-state` meter (Claude Code ≥ 2.1.9x), summed over the session's
+  runs and gathered across a resumed session's files, and flagged *partial*
+  when the session began before its first metered run.
 - **The harness is visible** — hook output, injected files, skill loads,
   compaction summaries and system records render in a collapsed lane with the
   classification evidence for each, instead of vanishing or masquerading as
@@ -99,11 +102,13 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
   filterable table of contents, per-lane toggles, keyboard navigation, no
   external assets. `--paginate N` splits a very large session into pages of N
   turns, with the sidebar contents and subagent links pointing across pages.
-- **A live index** — `--index` builds a sortable page of every session on
-  disk with an activity column whose ages decay in the browser without
-  regeneration; `--index --watch 300` keeps regenerating it on a loop and the
-  page reloads itself, giving a slow-paced dashboard of which conversations
-  are active right now.
+- **A live index with search across every archive** — `--index` builds a
+  sortable page of every session on disk with an activity column whose ages
+  decay in the browser without regeneration, and a search box over **every
+  prompt of every archive** (embedded at index time, deep-linking to the
+  prompt's `#P` anchor on its page); `--index --watch 300` keeps regenerating
+  it on a loop and the page reloads itself, giving a slow-paced dashboard of
+  which conversations are active right now.
 - **Tool I/O under your control** — `--tool-output on|off` independent of
   format, and long outputs elided in the middle (`--full` to keep everything),
   with every elision counted on the page.
@@ -113,8 +118,8 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
 - **Every run is on the record** — `--verbose`/`--quiet` for the console, and
   an audit log per invocation under `<archive-dir>/logs/` (exact command
   line, versions, every message, outcome), `--log-dir` to move it.
-- Standard library only, one file, 225 checks in the test suite, CI on
-  Linux/Windows.
+- Standard library only, one file, 240 checks in the test suite, CI on
+  Linux/Windows/macOS.
 
 ## How this compares
 
@@ -134,17 +139,22 @@ document, use this one.
 
 Gaps worth closing:
 
-- **Search across a whole archive.** Each page now searches its own turns;
-  searching every archive from the index page is the remaining step.
-- **First-class Linux and macOS support.** CI already runs the suite on
-  Linux, but both platforms need real-world verification: cowork-root
+- **First-class Linux and macOS support.** CI runs the suite on Linux and
+  macOS, but both platforms need real-world verification: cowork-root
   auto-detection, TeX font paths, and archives of sessions produced there.
   Reports from Linux/Mac users are especially welcome.
+- **Scale.** Every run re-reads every transcript under the roots to resolve
+  chains, and the index compares uuid sets pairwise — fine for hundreds of
+  sessions, slow for thousands. A cached scan is the obvious next step.
+- **Search covers prompts, not responses, across archives.** The index
+  searches every human prompt of every archive; Claude's responses are
+  searchable within a page. Indexing responses too means a much larger
+  index file and is deferred until someone needs it.
 
 (Subagent rendering, the Markdown format, cowork discovery, the claude.ai
-importer, pagination, and per-page search, formerly listed here, shipped.
-Every feature and every known limitation is listed in one place in the
-[user manual](docs/USER_MANUAL.md).) Two caveats on the
+importer, pagination, per-page search and cross-archive prompt search,
+formerly listed here, shipped. Every feature and every known limitation is
+listed in one place in the [user manual](docs/USER_MANUAL.md).) Two caveats on the
 sources: the cowork directory layout follows Claude Desktop's documented
 structure but was tested against synthetic data, and the claude.ai importer —
 now validated against a real August 2026 export (fidelity report reconciled
@@ -271,7 +281,7 @@ records, and each is now covered by a test:
 python tests/test_archiver.py
 ```
 
-225 checks, run against the synthetic sessions in `examples/` —
+240 checks, run against the synthetic sessions in `examples/` —
 self-contained, no real transcript needed. The LaTeX/PDF compile checks are
 skipped (not failed) when no TeX installation is on `PATH`; everything else
 needs only Python. The suite also verifies that the user manual and
@@ -312,7 +322,11 @@ by the result. The effort, reconstructed from the session transcripts: **ten
 days from first prototype to release** (August 16–26, 2026), across roughly
 eight long working sessions — some 40 MB of raw transcript — and 15 commits.
 The first public commit landed only on day nine — everything before that was
-survival testing.
+survival testing. Two more days of review-driven releases followed (2.4 →
+2.6, August 28–29: a full project review, an independent code-review pass,
+survival runs that caught six new record types Claude Code had started
+writing, and the fixes each of those demanded), bringing the history to
+30 commits.
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
@@ -323,7 +337,7 @@ scientific papers use):
 | **Conceptualization** | The premise — a full-fidelity, self-contained record of an AI-assisted session, fit for scientific reporting — and most feature ideas: P/R citation tags, the tool-output switch, the live-activity index, pagination | The render/fold/count reconciliation model that became the fidelity report |
 | **Methodology** | The priority order (content fidelity first, then sources, then formats); the academic-publishing requirements that shaped the LaTeX fragment | Chain resolution by uuid-set comparison; per-`requestId` usage dedup; the verbatim-human-turn rule |
 | **Software** | — | All of it |
-| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*) | The 225-check test suite and CI |
+| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*); commissioned the review and code-review passes | The 240-check test suite and CI; the review-driven survival runs |
 | **Investigation** | Directed the survey of neighbouring tools | Code and documentation analysis for the comparison section |
 | **Data curation** | — | The synthetic sample and the showcase conversation, built to carry exactly the cases that had broken on real data |
 | **Visualization** | The chat layout (human right, Claude left), box styling, tag and timestamp placement | The HTML/CSS realising it |

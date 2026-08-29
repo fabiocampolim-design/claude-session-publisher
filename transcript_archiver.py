@@ -55,7 +55,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.5.1"
+VERSION = "2.6"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -3069,11 +3069,44 @@ def _age_label(seconds: float) -> str:
     return f"{int(seconds // 86400)}d"
 
 
+_HUMAN_TURN_RE = re.compile(
+    r'<section class="turn human-turn" id="([^"]+)"[^>]*>.*?'
+    r'<span class="who">Human(?: <span class="rtag" id="([^"]+)">[^<]*</span>)?</span>.*?'
+    r'<div class="turn-body"><div class="raw(?: mono)?">(.*?)</div></div>', re.S)
+_SEARCH_TEXT_CAP = 400
+
+
+def prompt_index_entry(archive_dir: Path, meta: dict) -> dict:
+    """Every human prompt of one archive, with a deep link, for the index
+    page's cross-archive search. Read back from the archive's own HTML (all
+    pages of a paginated one), so archives written by earlier versions and
+    imports are covered alike; prompts without a P tag link to their turn."""
+    prompts: list[dict] = []
+    for page_name in (meta.get("pages") or [meta["file"]]):
+        pf = archive_dir / page_name
+        try:
+            text = pf.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for anchor, tag, body in _HUMAN_TURN_RE.findall(text):
+            plain = html.unescape(re.sub(r"<[^>]+>", "", body))
+            plain = " ".join(plain.split())
+            if not plain:
+                continue
+            prompts.append({"tag": tag or "", "href": f"{page_name}#{tag or anchor}",
+                            "text": plain[:_SEARCH_TEXT_CAP]})
+    return {"session_id": meta.get("session_id", ""), "title": meta.get("title") or "",
+            "file": meta["file"], "prompts": prompts}
+
+
 def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
                 sessions: dict | None = None, refresh: int | None = None) -> None:
     if sessions is None:
         sessions = scan_sessions(projects_root)
     now = datetime.datetime.now(datetime.timezone.utc)
+    # A first --index into a fresh directory must simply create it, as an
+    # export does; the archive is empty, not an error.
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     archived: dict[str, dict] = {}
     for f in sorted(archive_dir.glob("*.html")):
         if f.name == out_path.name:
@@ -3236,8 +3269,15 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
             counts["archived"] += 1
         else:
             counts["missing"] += 1
+    search_index = [prompt_index_entry(archive_dir, meta)
+                    for _sid, meta in sorted(archived.items(),
+                                             key=lambda kv: kv[1].get("last_record") or "",
+                                             reverse=True)]
+    n_prompts = sum(len(e["prompts"]) for e in search_index)
     page = _INDEX_TEMPLATE.format(
         rows="".join(rows),
+        search_json=json.dumps(search_index, ensure_ascii=False).replace("</", "<\\/"),
+        n_prompts=f"{n_prompts:,}",
         summary=(f"{len(sessions)} sessions on disk &middot; {counts['archived']} archived &middot; "
                  f"{counts['missing']} not archived directly"
                  + (f" &middot; {n_imported} archived from imports or deleted sources"
@@ -3631,6 +3671,13 @@ _INDEX_TEMPLATE = """<!doctype html>
   <p class="muted small">Generated {generated}. &ldquo;Covered&rdquo; means the session was resumed into
      another transcript that <em>is</em> archived, so its records live in that file.</p>
 </header>
+<div class="archive-search">
+  <input type="search" id="archive-search" placeholder="Search every prompt across all archives ({n_prompts} prompts)"
+         aria-label="Search prompts across all archives">
+  <div class="muted small" id="search-status"></div>
+  <div id="search-results" class="search-results" hidden></div>
+</div>
+<script type="application/json" id="search-index">{search_json}</script>
 <div class="table-wrap"><table>
 <thead><tr><th class="sortable" data-i="0">status</th>
 <th class="sortable" data-i="1">activity</th>
@@ -3672,6 +3719,57 @@ _INDEX_JS = """
   tick();
   setInterval(tick, 60000);
 
+  /* Cross-archive search: every human prompt of every archive is embedded
+     as JSON at index time (see prompt_index_entry); matches deep-link to
+     the prompt's anchor on its page, and the session table narrows to the
+     sessions that matched. */
+  var idxEl = document.getElementById('search-index');
+  var box = document.getElementById('archive-search');
+  var out = document.getElementById('search-results');
+  var status = document.getElementById('search-status');
+  var entries = [];
+  try { entries = JSON.parse(idxEl ? idxEl.textContent : '[]'); } catch (e) { entries = []; }
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function snippet(text, q) {
+    var i = text.toLowerCase().indexOf(q), a = Math.max(0, i - 70), b = Math.min(text.length, i + q.length + 90);
+    return (a > 0 ? '\\u2026' : '') + escapeHtml(text.slice(a, i)) + '<mark>' + escapeHtml(text.slice(i, i + q.length))
+      + '</mark>' + escapeHtml(text.slice(i + q.length, b)) + (b < text.length ? '\\u2026' : '');
+  }
+  function narrowTable(sids) {
+    document.querySelectorAll('table tbody tr').forEach(function (tr) {
+      var cell = tr.cells[2];
+      var sid = cell ? (cell.getAttribute('data-k') || '') : '';
+      tr.hidden = sids !== null && !sids[sid];
+    });
+  }
+  if (box) box.addEventListener('input', function () {
+    var q = box.value.trim().toLowerCase();
+    if (q.length < 2) { out.hidden = true; out.innerHTML = ''; status.textContent = ''; narrowTable(null); return; }
+    var hits = [], sids = {}, total = 0;
+    entries.forEach(function (e) {
+      var inTitle = e.title.toLowerCase().indexOf(q) !== -1;
+      e.prompts.forEach(function (p) {
+        if (p.text.toLowerCase().indexOf(q) !== -1) {
+          total++; sids[e.session_id] = true;
+          if (hits.length < 200) hits.push({e: e, p: p});
+        }
+      });
+      if (inTitle) sids[e.session_id] = true;
+    });
+    status.textContent = total + ' matching prompt' + (total === 1 ? '' : 's') + ' in '
+      + Object.keys(sids).length + ' session' + (Object.keys(sids).length === 1 ? '' : 's')
+      + (total > 200 ? ' (first 200 shown)' : '');
+    out.innerHTML = hits.map(function (h) {
+      return '<a class="hit" href="' + escapeHtml(h.p.href) + '"><span class="hit-meta"><code>'
+        + escapeHtml(h.e.session_id.slice(0, 8)) + '</code> ' + (h.p.tag ? '<span class="rtag">' + escapeHtml(h.p.tag) + '</span> ' : '')
+        + escapeHtml(h.e.title) + '</span><span class="hit-text">' + snippet(h.p.text, q) + '</span></a>';
+    }).join('');
+    out.hidden = hits.length === 0;
+    narrowTable(sids);
+  });
+
   var table = document.querySelector('table');
   if (!table) return;
   var tbody = table.tBodies[0];
@@ -3708,6 +3806,17 @@ th.sortable:hover{text-decoration:underline}
 th.sortable::after{content:"\\2195";opacity:.25;margin-left:.4em;font-size:.85em}
 th.sorted-asc::after{content:"\\2191";opacity:.8}
 th.sorted-desc::after{content:"\\2193";opacity:.8}
+.archive-search{margin:0 0 18px}
+.archive-search input{font:inherit;font-size:14px;padding:9px 12px;border-radius:8px;width:100%;
+  border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.search-results{display:flex;flex-direction:column;gap:6px;margin-top:10px;max-height:60vh;overflow:auto}
+.search-results .hit{display:block;text-decoration:none;color:var(--ink);padding:8px 12px;border-radius:8px;
+  border:1px solid var(--line);background:var(--card)}
+.search-results .hit:hover{background:var(--line-soft)}
+.search-results .hit-meta{display:block;font-size:11.5px;color:var(--ink-soft);margin-bottom:3px}
+.search-results .hit-text{display:block;font-size:13px}
+.search-results mark{background:var(--system-bg);color:var(--ink);padding:0 2px;border-radius:3px}
+tr[hidden]{display:none}
 """
 
 

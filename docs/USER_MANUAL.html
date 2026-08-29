@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.5.1</p>
+<p class="subtitle">transcript_archiver.py v2.6</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -605,7 +605,19 @@ another transcript that is archived), <strong>legacy v1</strong>, or
 <strong>not archived</strong>; lists archives whose source is not on
 disk (claude.ai imports, deleted transcripts); and shows an activity
 column whose ages decay in the browser. Headers sort on click.
-<code>--watch</code> keeps it regenerating.</p>
+<code>--watch</code> keeps it regenerating. A first <code>--index</code>
+into a directory that does not exist yet creates it.</p>
+<p><strong>Search across every archive.</strong> The index page carries
+a search box over every human prompt of every archive — all pages of a
+paginated archive and subagent prompts (<code>A1.P1</code>) included —
+read back from the archives’ own HTML at index time, so archives written
+by earlier versions and claude.ai imports are covered alike. Typing two
+or more characters lists the matching prompts (session, tag, title,
+highlighted snippet; first 200 shown), each linking straight to the
+prompt’s anchor on its page, and narrows the session table to the
+sessions that matched. Prompts are capped at 400 characters in the
+index; Claude’s responses are searchable within each page, not across
+archives (see limitations).</p>
 <h2 id="latex-and-pdf">5. LaTeX and PDF</h2>
 <p>Requirements: a TeX installation providing <code>xelatex</code>,
 <code>fvextra</code>, <code>tcolorbox</code>, <code>booktabs</code>,
@@ -696,10 +708,14 @@ defined.</li>
 <li><strong>Live index decay is one-directional</strong>: a session can
 go quiet on screen but cannot become active without regeneration
 (<code>--watch</code>).</li>
+<li><strong>Cross-archive search covers prompts, not responses</strong>
+(and the first 400 characters of each prompt). Responses are searchable
+within a page. Indexing responses would multiply the index file’s size
+and is deferred.</li>
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>225 checks against the synthetic sessions in <code>examples/</code>
+<p>240 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>
