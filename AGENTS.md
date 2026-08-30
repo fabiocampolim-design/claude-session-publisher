@@ -161,4 +161,17 @@ counts; a human turn's `div.raw` computes to `white-space: pre-wrap`.
 - Keep `docs/USER_MANUAL.md`, this file and `--help` in sync: the suite fails
   if either document omits a CLI flag or the README's check count drifts.
   Rebuild the manual with `python docs/build_manual.py`.
-- Bump `VERSION`, add a `CHANGELOG.md` entry, tag the release.
+- **A LaTeX change is not verified until the PDF is read back.** `xelatex`
+  exits 0 while silently dropping whatever runs past the page: a `tabular`
+  cannot break across pages, so before 2.6.4 a 300-row table compiled to a
+  document containing none of its rows, and a wide one lost the cells past
+  the right edge. Nothing may go into an unbreakable, unbounded environment —
+  tables are chunked (`_tex_table`) and oversized turns are split
+  (`_pack_verbatim`). The suite compiles a table-heavy session and counts the
+  pages; extend that guard rather than trusting a return code.
+- `pyflakes` runs over the whole tree in CI on all three platforms and must
+  stay clean: `python -m pyflakes transcript_archiver.py tests docs examples`.
+- Every source file carries `SPDX-License-Identifier: Apache-2.0` and the
+  copyright line; `CITATION.cff` tracks `VERSION`. The suite checks both.
+- Bump `VERSION`, add a `CHANGELOG.md` entry, update `CITATION.cff`, tag the
+  release.

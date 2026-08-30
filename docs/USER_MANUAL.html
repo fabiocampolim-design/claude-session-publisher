@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.6.3</p>
+<p class="subtitle">transcript_archiver.py v2.6.4</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -621,11 +621,11 @@ archives (see limitations).</p>
 <h2 id="latex-and-pdf">5. LaTeX and PDF</h2>
 <p>Requirements: a TeX installation providing <code>xelatex</code>,
 <code>fvextra</code>, <code>tcolorbox</code>, <code>booktabs</code>,
-<code>enumitem</code>, <code>xcolor</code>, <code>hyperref</code> and
-the DejaVu fonts (TeX Live <code>scheme-full</code> has all of them).
-Fonts are loaded <strong>by file name from TeX Live</strong>, not from
-the system, so output does not depend on the machine’s font
-database.</p>
+<code>array</code>, <code>enumitem</code>, <code>xcolor</code>,
+<code>hyperref</code> and the DejaVu fonts (TeX Live
+<code>scheme-full</code> has all of them). Fonts are loaded <strong>by
+file name from TeX Live</strong>, not from the system, so output does
+not depend on the machine’s font database.</p>
 <ul>
 <li><code>pdf</code> = the standalone LaTeX compiled by
 <code>xelatex</code> twice (for the table of contents);
@@ -638,7 +638,7 @@ your own document. It is engine-neutral: Greek becomes math
 (<code>Γ</code> → <code>$\Gamma$</code>), sub/superscripts become math,
 arrows and box drawing become ASCII, accents are stripped to the base
 letter. Your preamble needs
-<code>\usepackage{fvextra} \usepackage{xcolor} \usepackage{enumitem} \usepackage{booktabs} \usepackage[most]{tcolorbox}</code>.
+<code>\usepackage{fvextra} \usepackage{xcolor} \usepackage{enumitem} \usepackage{booktabs} \usepackage{array} \usepackage[most]{tcolorbox}</code>.
 The turn environments are defined with <code>\@ifundefined</code>, so
 you can restyle them from your preamble.</li>
 <li>Emoji and other glyphs no TeX font can set, and C0/C1 control bytes
@@ -649,8 +649,18 @@ hard-wrapped so TeX can typeset them; the count is stated.</li>
 is split into consecutive boxes titled <em>(part k/n)</em>: one
 breakable box holding it whole exhausts TeX’s memory. The document
 states how many turns were split; nothing is omitted.</li>
-<li>Validated by a full pass over a real 62-session archive (5,109
-pages, <code>--tool-output off</code>, August 2026).</li>
+<li><strong>Markdown tables are cut into chunks of at most 30 typeset
+rows</strong>, each its own <code>tabular</code> repeating the header
+and marked <em>(table continued)</em>, because a single
+<code>tabular</code> cannot break across a page. A table whose natural
+width exceeds the line gets equal wrapping <code>p</code>-columns
+instead of natural ones, so no cell runs off the paper. Both were silent
+losses before 2.6.4.</li>
+<li>Validated by a full pass over a real 64-session archive (6,245
+pages, 69 minutes, <code>--tool-output off</code>, 64/64 compiled,
+August 2026), and by a compile-and-count check in the suite: a reply
+that is a 300-row table has to occupy the pages its rows need, not
+merely exit 0.</li>
 <li>Cost of full tool I/O, measured: a 636-record session → 643 pages in
 about four minutes; a 1,655-record session is 92 pages with
 <code>--tool-output off</code> and 260 with it on.</li>
@@ -696,7 +706,9 @@ announced as omitted. LaTeX/PDF likewise; the HTML holds them.</li>
 (headings, lists incl. nested, tables, code fences of any length,
 quotes, inline code/bold/ italic/strike/links), not arbitrary
 CommonMark: no HTML passthrough, no reference links, no footnotes; table
-cells split on every <code>|</code>.</li>
+cells split on every <code>|</code>. In LaTeX and PDF a table is chunked
+and, when wide, wrapped (§5): the cells all survive, but a very wide
+table is column-equalised rather than laid out to taste.</li>
 <li><strong>Human-vs-injected classification</strong> is authoritative
 on records carrying <code>promptSource</code> /
 <code>origin.kind</code>; older records fall back to text markers, and
@@ -709,8 +721,10 @@ new file</strong> beside the old one rather than overwriting it.</li>
 files under the roots to resolve chains; the index compares uuid sets
 pairwise. Fine for hundreds of sessions; slow for thousands.</li>
 <li><strong>Platforms</strong>: developed and validated on Windows; the
-suite runs on Linux in CI; macOS untested beyond the cowork path being
-defined.</li>
+suite and a pyflakes static check run on Linux, Windows and macOS in CI.
+Neither Linux nor macOS has had a real-world run yet — cowork-root
+auto-detection and TeX font paths in particular are CI-green but
+unverified in the field.</li>
 <li><strong>Live index decay is one-directional</strong>: a session can
 go quiet on screen but cannot become active without regeneration
 (<code>--watch</code>).</li>
@@ -721,7 +735,7 @@ and is deferred.</li>
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>260 checks against the synthetic sessions in <code>examples/</code>
+<p>280 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>

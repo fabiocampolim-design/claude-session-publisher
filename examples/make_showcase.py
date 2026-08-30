@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Fabio Campolim
 """Generate the showcase conversation: a small, invented session built to
 demonstrate every feature on one page.
 

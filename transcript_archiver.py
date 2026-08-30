@@ -57,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6.3"
+VERSION = "2.6.4"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -2378,10 +2378,35 @@ _TEX_HARD_WRAP = 500
 # consecutive boxes titled "(part k/n)", and the document says so.
 _TEX_BOX_MAX_LINES = 1500
 
+# Prose is set at the box's own measure, not hard-wrapped like verbatim, so an
+# _Atomic block's typeset height is its character count over roughly this many
+# characters a line -- not its newline count. Costing a paragraph by newlines
+# alone let one 300,000-character reply cost two lines and claim a whole box.
+# The figure runs a little short of the real measure on purpose: LaTeX markup
+# inflates the source, and over-costing only buys an extra box, while
+# under-costing buys "TeX capacity exceeded".
+_TEX_PROSE_WRAP = 100
+
+# A tabular cannot break across a page and takes its width from its content,
+# so a long or wide markdown table silently loses whatever runs past the paper
+# (measured: 300 rows -> 0 survived; 12 columns -> 35 of 60 cells off the
+# right edge, xelatex exiting 0 either way). Tables are cut into chunks of at
+# most this many typeset rows -- consecutive tabulars a breakable box can
+# break between -- and get wrapping p-columns when their natural width does
+# not fit the line.
+_TEX_TABLE_MAX_LINES = 30
+_TEX_TABLE_LINE_CHARS = 90
+
 
 class _Atomic(str):
     """A block already rendered to LaTeX (a paragraph, list, table) that a
-    box split may not cut; it costs its source lines."""
+    box split may not cut; it costs its typeset height."""
+
+
+def _atomic_cost(text: str) -> int:
+    """Typeset lines an already-rendered block will occupy: every source line
+    counts at least one, and a long one counts the lines it will wrap to."""
+    return sum(max(1, -(-len(ln) // _TEX_PROSE_WRAP)) for ln in text.split("\n"))
 
 
 def _pack_verbatim(segments) -> list[list[str]]:
@@ -2413,7 +2438,7 @@ def _pack_verbatim(segments) -> list[list[str]]:
 
     for seg, text in enumerate(segments):
         if isinstance(text, _Atomic):
-            place(seg, text, text.count("\n"))
+            place(seg, text, _atomic_cost(text))
         else:
             for ln in text.split("\n"):
                 place(seg, ln, cost(ln))
@@ -2459,6 +2484,66 @@ def tex_verbatim(body: str, tally, neutral: bool = False) -> str:
     return "\\begin{Verbatim}[" + opts + "]\n" + body + "\n\\end{Verbatim}\n"
 
 
+def _tex_table(header, rows, inl) -> str:
+    """A markdown table as one or more consecutive tabulars.
+
+    A tabular is unbreakable and unbounded: it takes its width from its
+    content and never splits across a page, so on the real archive a long or
+    wide table lost every row that ran past the paper while xelatex still
+    exited 0. So the table is cut into chunks of at most _TEX_TABLE_MAX_LINES
+    typeset rows -- separate tabulars, which the breakable box around them may
+    break between -- and, when the natural width does not fit the line, the
+    columns become equal wrapping p-columns so no cell runs off the edge.
+    Every chunk repeats the header, and every chunk after the first says it is
+    a continuation, so the pieces still read as one table.
+    """
+    ncol = max(1, len(header))
+    body = [(list(r) + [""] * ncol)[:ncol] for r in rows]
+    widest = [max([len(str(header[c])) if c < len(header) else 0]
+                  + [len(str(r[c])) for r in body]) for c in range(ncol)]
+    # +3 for the column separation a natural-width tabular adds per column.
+    wrap = sum(widest) + 3 * ncol > _TEX_TABLE_LINE_CHARS
+    if wrap:
+        # p-columns of an equal share of the line. \linewidth is the enclosing
+        # box's inner width, so this fits inside a turn box as well as on the
+        # page, and 2\tabcolsep per column is exactly what tabular adds.
+        cell = ("\\dimexpr\\linewidth/" + str(ncol)
+                + " - 2\\tabcolsep - \\arrayrulewidth\\relax")
+        spec = (">{\\raggedright\\arraybackslash}p{" + cell + "}") * ncol
+        colchars = max(8, _TEX_TABLE_LINE_CHARS // ncol)
+    else:
+        spec = "l" * ncol
+        colchars = 0
+
+    def height(cells):
+        if not wrap:
+            return 1
+        return max(1, max(-(-len(str(c)) // colchars) for c in cells))
+
+    chunks, cur, n = [], [], 0
+    for r in body:
+        h = height(r)
+        if cur and n + h > _TEX_TABLE_MAX_LINES:
+            chunks.append(cur)
+            cur, n = [], 0
+        cur.append(r)
+        n += h
+    if cur or not chunks:
+        chunks.append(cur)
+
+    head = " & ".join(inl(str(c)) for c in header) + " \\\\\n\\midrule\n"
+    out = []
+    for k, chunk in enumerate(chunks):
+        if k:
+            out.append("\\smallskip\\noindent{\\footnotesize\\itshape "
+                       "(table continued)}\\par\\nobreak\n")
+        out.append("\\begin{tabular}{" + spec + "}\n\\toprule\n" + head)
+        for r in chunk:
+            out.append(" & ".join(inl(str(c)) for c in r) + " \\\\\n")
+        out.append("\\bottomrule\n\\end{tabular}\n\n")
+    return "".join(out)
+
+
 def md_to_tex_blocks(text: str, tally, neutral: bool = False) -> list[str]:
     """Render markdown to LaTeX block by block for _pack_verbatim: a fenced
     block is returned as its raw text (a plain str, still to be set verbatim,
@@ -2481,14 +2566,7 @@ def md_to_tex_blocks(text: str, tally, neutral: bool = False) -> list[str]:
         elif tok[0] == "hr":
             out.append("\\medskip\\hrule\\medskip\n")
         elif tok[0] == "table":
-            header, rows = tok[1], tok[2]
-            ncol = max(1, len(header))
-            out.append("\\begin{tabular}{" + "l" * ncol + "}\n\\toprule\n")
-            out.append(" & ".join(inl(c) for c in header) + " \\\\\n\\midrule\n")
-            for r in rows:
-                cells = (list(r) + [""] * ncol)[:ncol]
-                out.append(" & ".join(inl(c) for c in cells) + " \\\\\n")
-            out.append("\\bottomrule\n\\end{tabular}\n\n")
+            out.append(_tex_table(tok[1], tok[2], inl))
         elif tok[0] == "list":
             # Group consecutive items by marker type so a list that switches
             # from bullets to numbers gets enumerate for the numbered run
@@ -2760,6 +2838,7 @@ _TEX_PREAMBLE = r"""\documentclass[10pt,a4paper]{article}
 \usepackage{fvextra}
 \usepackage[margin=20mm]{geometry}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{enumitem}
 \usepackage{xcolor}
 \usepackage[colorlinks=true,linkcolor=black,urlcolor=blue!60!black]{hyperref}
@@ -2810,7 +2889,7 @@ _FRAGMENT_HEAD = r"""% Transcript body only -- \input this into your own documen
 %
 % It needs these packages in your preamble:
 %     \usepackage{fvextra}   \usepackage{xcolor}   \usepackage{enumitem}
-%     \usepackage{booktabs}  \usepackage[most]{tcolorbox}
+%     \usepackage{booktabs}  \usepackage{array}    \usepackage[most]{tcolorbox}
 %
 % No \pagecolor is set here -- a fragment must not repaint its host's pages.
 % The turn environments are defined only if you have not defined your own,

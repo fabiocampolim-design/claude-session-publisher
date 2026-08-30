@@ -3,6 +3,51 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6.4 — 2026-08-29
+
+Findings of a whole-project review. The headline one is a silent loss in the
+PDF: the tool's central promise is that nothing is dropped without the page
+saying so, and for tables it was not keeping it.
+
+**Fixed**
+- **A markdown table in a Claude reply lost rows and cells in LaTeX and PDF.**
+  Tables went into a plain `tabular`, which cannot break across a page and
+  takes its width from its content. Measured in the compiled PDF: a 100-row
+  table kept 63 rows, 200 kept 22, **300 kept none**, and a 12-column table
+  lost 35 of its 60 cells off the right edge of the paper. The `.tex` held
+  every row throughout and `xelatex` exited 0 with no warning in the log, so
+  neither the suite nor the 64-session pass could see it. Tables are now cut
+  into chunks of at most 30 typeset rows — consecutive tabulars the breakable
+  box can break between, each repeating the header and marked *(table
+  continued)* — and a table wider than the line gets equal wrapping
+  `p`-columns. HTML, text and Markdown were never affected.
+- The box packer costed an already-rendered block by its newline count alone,
+  so one enormous unbroken paragraph costed two lines and claimed a whole box
+  — the same "TeX capacity exceeded" door 2.6.1 and 2.6.2 closed for pastes
+  and fenced blocks, reachable through prose. Such a block is now costed by
+  the lines it will actually occupy.
+
+**Added**
+- The suite compiles a session whose reply is a 300-row table and counts the
+  pages of the resulting PDF: the rows have to arrive, not merely exit 0. A
+  standard-library page counter reads the PDF, so the suite keeps its
+  no-dependency rule.
+- `CITATION.cff`, with suite checks that it exists, names Apache-2.0 and
+  tracks `VERSION`; the `SPDX-License-Identifier` header on every source file,
+  not only the archiver, with a check per file (githubify rule 17).
+- CI runs `pyflakes` over the whole tree before the suite, on all three
+  platforms.
+
+**Changed**
+- The LaTeX preamble and the `--fragment` package list now include `array`
+  (a core LaTeX tools package) for the wrapping table columns.
+
+**Docs**
+- The platform badge and the manual's platform limitation say macOS, which CI
+  has covered since 2.6; the manual records the v2.6.3 validation pass (64
+  sessions, 6,245 pages, 64/64) in place of the older 62-session figure, and
+  states the new table behaviour as both a feature and its remaining edge.
+
 ## 2.6.3 — 2026-08-29
 
 **Changed**

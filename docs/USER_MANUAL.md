@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.6.3"
+subtitle: "transcript_archiver.py v2.6.4"
 ---
 
 # claude-session-publisher — User Manual
@@ -230,7 +230,7 @@ archives (see limitations).
 ## 5. LaTeX and PDF
 
 Requirements: a TeX installation providing `xelatex`, `fvextra`,
-`tcolorbox`, `booktabs`, `enumitem`, `xcolor`, `hyperref` and the DejaVu
+`tcolorbox`, `booktabs`, `array`, `enumitem`, `xcolor`, `hyperref` and the DejaVu
 fonts (TeX Live `scheme-full` has all of them). Fonts are loaded **by file
 name from TeX Live**, not from the system, so output does not depend on the
 machine's font database.
@@ -244,7 +244,8 @@ machine's font database.
   become math, arrows and box drawing become ASCII, accents are stripped to
   the base letter. Your preamble needs
   `\usepackage{fvextra} \usepackage{xcolor} \usepackage{enumitem}
-  \usepackage{booktabs} \usepackage[most]{tcolorbox}`. The turn environments
+  \usepackage{booktabs} \usepackage{array} \usepackage[most]{tcolorbox}`.
+  The turn environments
   are defined with `\@ifundefined`, so you can restyle them from your preamble.
 - Emoji and other glyphs no TeX font can set, and C0/C1 control bytes (NULs
   from UTF-16 console captures, backspaces), are removed and **counted in the
@@ -254,8 +255,15 @@ machine's font database.
   split into consecutive boxes titled *(part k/n)*: one breakable box holding
   it whole exhausts TeX's memory. The document states how many turns were
   split; nothing is omitted.
-- Validated by a full pass over a real 62-session archive (5,109 pages,
-  `--tool-output off`, August 2026).
+- **Markdown tables are cut into chunks of at most 30 typeset rows**, each its
+  own `tabular` repeating the header and marked *(table continued)*, because a
+  single `tabular` cannot break across a page. A table whose natural width
+  exceeds the line gets equal wrapping `p`-columns instead of natural ones, so
+  no cell runs off the paper. Both were silent losses before 2.6.4.
+- Validated by a full pass over a real 64-session archive (6,245 pages, 69
+  minutes, `--tool-output off`, 64/64 compiled, August 2026), and by a
+  compile-and-count check in the suite: a reply that is a 300-row table has to
+  occupy the pages its rows need, not merely exit 0.
 - Cost of full tool I/O, measured: a 636-record session → 643 pages in about
   four minutes; a 1,655-record session is 92 pages with `--tool-output off`
   and 260 with it on.
@@ -296,7 +304,9 @@ These are the honest edges. Each is stated on the page where it applies.
 - **Markdown rendering covers Claude's own prose** (headings, lists incl.
   nested, tables, code fences of any length, quotes, inline code/bold/
   italic/strike/links), not arbitrary CommonMark: no HTML passthrough, no
-  reference links, no footnotes; table cells split on every `|`.
+  reference links, no footnotes; table cells split on every `|`. In LaTeX and
+  PDF a table is chunked and, when wide, wrapped (§5): the cells all survive,
+  but a very wide table is column-equalised rather than laid out to taste.
 - **Human-vs-injected classification** is authoritative on records carrying
   `promptSource` / `origin.kind`; older records fall back to text markers,
   and the evidence used is listed per record in the fidelity report.
@@ -306,8 +316,10 @@ These are the honest edges. Each is stated on the page where it applies.
 - **Scale**: every run re-reads all `.jsonl` files under the roots to resolve
   chains; the index compares uuid sets pairwise. Fine for hundreds of
   sessions; slow for thousands.
-- **Platforms**: developed and validated on Windows; the suite runs on Linux
-  in CI; macOS untested beyond the cowork path being defined.
+- **Platforms**: developed and validated on Windows; the suite and a pyflakes
+  static check run on Linux, Windows and macOS in CI. Neither Linux nor macOS
+  has had a real-world run yet — cowork-root auto-detection and TeX font paths
+  in particular are CI-green but unverified in the field.
 - **Live index decay is one-directional**: a session can go quiet on screen
   but cannot become active without regeneration (`--watch`).
 - **Cross-archive search covers prompts, not responses** (and the first 400
@@ -320,7 +332,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-260 checks against the synthetic sessions in `examples/` (no real transcript
+280 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

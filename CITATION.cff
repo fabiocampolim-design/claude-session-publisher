@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If claude-session-publisher helped you archive or cite an AI-assisted session, please cite it."
+title: "claude-session-publisher: full-fidelity, citable archives of Claude Code sessions"
+type: software
+version: "2.6.4"
+date-released: "2026-08-29"
+license: Apache-2.0
+repository-code: "https://github.com/fabiocampolim-design/claude-session-publisher"
+authors:
+  - family-names: Campolim
+    given-names: Fabio
+keywords:
+  - reproducibility
+  - research transparency
+  - AI-assisted research
+  - transcripts
+  - archiving
+  - Claude Code
+  - LaTeX
+  - provenance
+abstract: >-
+  Standard-library Python tool that turns a Claude Code, Claude Desktop cowork
+  or claude.ai session into a single self-contained document in HTML, plain
+  text, Markdown, LaTeX or PDF. Every source record is rendered, folded into an
+  earlier turn, or counted as deliberately not rendered, and the three are
+  reconciled against the source record count in a fidelity report on the page,
+  so the difference between "not in the transcript" and "not in the source" is
+  always visible. Human turns stay verbatim, prompts and responses carry
+  sequential P/R reference tags a paper can cite, resumed sessions are chain
+  resolved by record-uuid comparison, and usage is deduped per request id and
+  priced beside Claude Code's own reported cost meter.

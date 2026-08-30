@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Fabio Campolim
 """Generate a synthetic Claude Code session for tests and the README.
 
 Everything here is invented. No real conversation, path, key or name appears.

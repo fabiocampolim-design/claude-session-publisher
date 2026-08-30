@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Fabio Campolim
 """Checks for transcript_archiver's multi-format export.
 
 Run:  python tests/test_archiver.py
@@ -15,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zlib
 
 HERE = pathlib.Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "transcript_archiver.py"
@@ -54,6 +57,30 @@ def skip(name, reason):
     # archiver: report it without failing the suite (html/text need only Python).
     print(f"  SKIP  {name} ({reason})")
     SKIPPED[0] += 1
+
+
+def pdf_page_count(path):
+    """Pages in a PDF, standard library only.
+
+    The suite has no third-party dependency, so the file is read as bytes:
+    page objects usually live inside compressed object streams, so every
+    FlateDecode stream is inflated and scanned too. Verified against pymupdf
+    on nine documents of 2-12 pages.
+    """
+    raw = pathlib.Path(path).read_bytes()
+    n = len(re.findall(rb"/Type\s*/Page[^s]", raw))
+    if n:
+        return n
+    for m in re.finditer(rb"stream\r?\n", raw):
+        end = raw.find(b"endstream", m.end())
+        if end < 0:
+            continue
+        try:
+            data = zlib.decompress(raw[m.end():end])
+        except zlib.error:
+            continue
+        n += len(re.findall(rb"/Type\s*/Page[^s]", data))
+    return n
 
 
 def source_of(sid):
@@ -1561,6 +1588,104 @@ try:
               src33.count("CLAUDE - R2 ") == 1 and "R2 (part" not in src33, "short reply split")
 
         # ------------------------------------------------------------------
+        # Project review 2026-08-29: a markdown table in a Claude reply went
+        # into a plain tabular, which cannot break across a page and has no
+        # width of its own. Measured in the compiled PDF: 100 rows -> 63
+        # survived, 200 -> 22, 300 -> 0, and a 12-column table lost 35 of its
+        # 60 cells off the right edge of the paper. xelatex exited 0 and
+        # logged no warning, so neither this suite nor the 64-session pass
+        # could see it; the .tex held every row, so the loss was at
+        # typesetting. Tables are now cut into row chunks a breakable box can
+        # break between, and wrap their cells when the natural width does not
+        # fit the line.
+        print("\n[34] Markdown tables survive typesetting")
+        tally34 = collections.Counter()
+        tall = "| a | b |\n|---|---|\n" + "\n".join(
+            "| row%d | v%d |" % (i, i) for i in range(300))
+        blocks34 = ta.md_to_tex_blocks(tall, tally34)
+        src34 = "".join(blocks34)
+        chunks34 = re.findall(r"\\begin\{tabular\}.*?\\end\{tabular\}", src34, re.S)
+        check("a 300-row table is cut into several tabulars",
+              len(chunks34) >= 6, "%d tabulars" % len(chunks34))
+        check("no single tabular chunk exceeds the row-chunk limit",
+              chunks34 and max(c.count("\\\\\n") for c in chunks34) <= ta._TEX_TABLE_MAX_LINES + 2,
+              "max %d rows in a chunk" % max((c.count("\\\\\n") for c in chunks34), default=0))
+        check("every row of the tall table is still in the source",
+              all(("row%d" % i) in src34 for i in (0, 42, 150, 299)), "rows lost")
+        check("each chunk repeats the header so it still reads as one table",
+              src34.count("a & b") >= len(chunks34), "header not repeated per chunk")
+        check("a continued chunk says it is continued",
+              "continued" in src34.lower(), "no continuation marker")
+
+        wide = ("| " + " | ".join("column_header_%d" % i for i in range(12)) + " |\n"
+                + "|" + "---|" * 12 + "\n"
+                + "\n".join("| " + " | ".join("WIDECELL%dlongvalue" % i for i in range(12)) + " |"
+                            for _ in range(5)))
+        src34w = "".join(ta.md_to_tex_blocks(wide, tally34))
+        check("a table too wide for the line gets wrapping columns",
+              "p{" in src34w and "\\begin{tabular}{llll" not in src34w,
+              "still fixed-width l columns")
+        check("every cell of the wide table is in the source",
+              src34w.count("WIDECELL") == 60, "%d cells" % src34w.count("WIDECELL"))
+
+        src34s = "".join(ta.md_to_tex_blocks("| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |", tally34))
+        check("a small table is still one plain tabular",
+              src34s.count("\\begin{tabular}") == 1 and "\\begin{tabular}{ll}" in src34s,
+              "small table changed shape")
+
+        # The packer costed an _Atomic block by its newlines alone, so a reply
+        # that is one enormous unbroken paragraph costed two lines and went
+        # into a single box -- the same TeX-capacity door 2.6.1 and 2.6.2
+        # closed for pastes and fences, reached through prose instead.
+        blocks34p = ta.md_to_tex_blocks("word " * 60000, tally34)
+        check("one enormous paragraph is costed by its typeset length",
+              sum(ta._atomic_cost(b) for b in blocks34p) > ta._TEX_BOX_MAX_LINES,
+              "a 300,000-character paragraph still costs only its newlines")
+
+        # A .tex holding every row proves nothing: the loss was downstream, in
+        # the typesetting, and the run still exited 0. So the guard is the
+        # compiled artefact -- a 300-row table has to occupy the pages its
+        # rows need. Before the fix this document was 4 pages with no row on
+        # any of them; after it, twelve.
+        if not shutil.which("xelatex"):
+            skip("a long table's rows reach the compiled PDF", "xelatex not on PATH")
+        else:
+            tdir = pathlib.Path(tempfile.mkdtemp(prefix="tbl_"))
+            try:
+                sess = tdir / "proj" / "p"
+                sess.mkdir(parents=True)
+                sid = "dddddddd-0000-4000-8000-00000000table"[:36]
+                u1 = "dddddddd-0000-4000-9000-000000000001"
+                recs = [
+                    {"type": "user", "uuid": u1, "parentUuid": None, "sessionId": sid,
+                     "timestamp": "2026-02-01T10:00:00Z", "cwd": "/tmp", "version": "2.1.9",
+                     "message": {"role": "user", "content": [{"type": "text", "text": "table"}]}},
+                    {"type": "assistant", "uuid": "dddddddd-0000-4000-9000-000000000002",
+                     "parentUuid": u1, "sessionId": sid, "timestamp": "2026-02-01T10:00:01Z",
+                     "requestId": "r1", "cwd": "/tmp", "version": "2.1.9",
+                     "message": {"role": "assistant", "model": "claude-opus-5",
+                                 "content": [{"type": "text", "text": tall}],
+                                 "usage": {"input_tokens": 10, "output_tokens": 20}}},
+                ]
+                (sess / (sid + ".jsonl")).write_text(
+                    "\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+                q = subprocess.run(
+                    [sys.executable, str(SCRIPT), sid, "--projects-root", str(tdir / "proj"),
+                     "--archive-dir", str(tdir / "out"), "--format", "pdf",
+                     "--tool-output", "off"], capture_output=True, text=True)
+                built = list((tdir / "out").glob("*.pdf"))
+                check("a session whose reply is a 300-row table exports to PDF",
+                      q.returncode == 0 and len(built) == 1,
+                      (q.stderr or "")[-300:])
+                pages = pdf_page_count(built[0]) if built else 0
+                check("the long table's rows reach the compiled PDF, not just the .tex",
+                      pages >= 8,
+                      "%d pages -- 300 rows cannot fit in that many unless they were dropped"
+                      % pages)
+            finally:
+                shutil.rmtree(tdir, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         print("\n[29] Documentation set and its consistency with the CLI")
         REPO = HERE.parent
         for rel in ("AGENTS.md", "CHANGELOG.md", "docs/USER_MANUAL.md",
@@ -1621,6 +1746,29 @@ try:
         licence = (REPO / "LICENSE").read_text(encoding="utf-8", errors="replace")
         check("LICENSE disclaims warranty and liability",
               "WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND" in licence and "Limitation of Liability" in licence, "clause missing")
+        # githubify rule 17 also asks for the machine-readable licence and an
+        # SPDX header in every source file -- both were missing here while the
+        # sister repo carried them, found in the project review of 2026-08-29.
+        cff = REPO / "CITATION.cff"
+        check("CITATION.cff exists", cff.exists(), "missing")
+        if cff.exists():
+            cff_text = cff.read_text(encoding="utf-8", errors="replace")
+            check("CITATION.cff names the Apache licence",
+                  "license: Apache-2.0" in cff_text, "licence line missing")
+            check("CITATION.cff version matches VERSION",
+                  ('version: "%s"' % ta.VERSION) in cff_text,
+                  "CITATION.cff is not at %s" % ta.VERSION)
+        for rel in ("transcript_archiver.py", "tests/test_archiver.py",
+                    "docs/build_manual.py", "examples/make_sample.py",
+                    "examples/make_showcase.py"):
+            src_text = (REPO / rel).read_text(encoding="utf-8", errors="replace")
+            check("%s carries the SPDX header" % rel,
+                  "SPDX-License-Identifier: Apache-2.0" in src_text
+                  and "Copyright 2026" in src_text, "header missing")
+        ci = (REPO / ".github" / "workflows" / "tests.yml").read_text(
+            encoding="utf-8", errors="replace")
+        check("CI runs pyflakes as well as the suite",
+              "pyflakes" in ci, "no static check in CI")
         check("README carries a visible Disclaimer under Licence",
               "### Disclaimer" in readme and "without warrant" in readme
               and "liable" in readme and readme.index("## Licence") < readme.index("### Disclaimer"),
