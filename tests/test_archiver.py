@@ -1649,6 +1649,7 @@ try:
         # any of them; after it, twelve.
         if not shutil.which("xelatex"):
             skip("a long table's rows reach the compiled PDF", "xelatex not on PATH")
+            SKIPPED[0] += 1      # and the export check that precedes it
         else:
             tdir = pathlib.Path(tempfile.mkdtemp(prefix="tbl_"))
             try:
