@@ -333,7 +333,7 @@ survival testing. Two more days of review-driven releases followed (2.4 →
 pass, survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded — the last of them a table that
 compiled cleanly while dropping its rows), bringing the history to
-36 commits.
+38 commits.
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
