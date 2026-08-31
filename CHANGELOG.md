@@ -3,6 +3,35 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6.5 — 2026-08-31
+
+Found by regenerating the whole real archive after the first Fable 5 sessions.
+
+**Fixed**
+- **A safeguard refusal with model fallback was prose only.** Claude Code
+  2.1.25x writes a `system/model_refusal_fallback` record when a message is
+  refused: it names the original and fallback models, the refusal category,
+  and the uuids of the messages it retracted — which are absent from the
+  `.jsonl`. The page showed the notice text under a raw "model refusal
+  fallback" badge and nothing else, so a reader could not see that five
+  messages of an eight-minute stretch are missing from the source, nor that
+  the rest of the session ran on another model. Now: an event *Model fallback
+  after a safeguard refusal* with the detail
+  `claude-fable-5 -> claude-opus-4-8 (category: cyber), 5 message(s) retracted`
+  in every format, the retraction count and their absence stated in the
+  body, a *Harness retractions* row in the HTML session info, and a stderr
+  note. Ten new checks.
+- `system/away_summary` (the recap printed when you return to a session) has
+  its own badge, *Away summary*, instead of the raw subtype.
+- Text, Markdown and LaTeX now carry an event's detail in its label, as the
+  HTML always did.
+
+**Verified**
+- First real-world Linux run (WSL2 Ubuntu, Python 3.14): all non-PDF formats
+  of a real session, `--index`, and the loud failure without `xelatex`.
+- The whole real archive (72 sessions, 88 in the index) regenerated with this
+  version: every fidelity report reconciles, no unhandled record types.
+
 ## 2.6.4 — 2026-08-29
 
 Findings of a whole-project review. The headline one is a silent loss in the

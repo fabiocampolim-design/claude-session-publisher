@@ -1029,6 +1029,84 @@ try:
             shutil.rmtree(tmp15b, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # Found on 2026-08-31 in a real Fable 5 session: the harness refused a
+        # message, retracted five assistant messages (absent from the .jsonl),
+        # and continued on a fallback model. The page must say all of that as
+        # structure, not only as the notice's prose; and the same session's
+        # "away_summary" recap is a system record of its own.
+        print("\n[25g] Safeguard refusal with model fallback: a structured event; retractions reported")
+        tmp15c = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25c-"))
+        try:
+            proj = tmp15c / "projects" / "p"
+            proj.mkdir(parents=True)
+            SIDC = "25c25c25-0000-4000-8000-000000000025"
+            base = {"sessionId": SIDC, "isSidechain": False, "cwd": "/w", "version": "2.1.251"}
+            recs = [
+                dict(base, type="user", uuid="u-1", timestamp="2026-08-31T03:40:00Z",
+                     promptSource="typed", origin={"kind": "human"},
+                     message={"role": "user", "content": "start please"}),
+                dict(base, type="assistant", uuid="a-1", timestamp="2026-08-31T03:40:10Z",
+                     requestId="r1", message={"role": "assistant", "model": "claude-fable-5",
+                                              "content": [{"type": "text", "text": "BEFORE-FALLBACK"}],
+                                              "usage": {"input_tokens": 1, "output_tokens": 1}}),
+                dict(base, type="user", uuid="u-ref", timestamp="2026-08-31T03:41:00Z",
+                     promptSource="typed", origin={"kind": "human"},
+                     message={"role": "user", "content": "go again"}),
+                dict(base, type="system", uuid="s-fb", timestamp="2026-08-31T03:49:02Z",
+                     subtype="model_refusal_fallback", level="warning", trigger="refusal",
+                     content="Fable 5's safeguards flagged this message. Switched to Opus 4.8.",
+                     originalModel="claude-fable-5", fallbackModel="claude-opus-4-8",
+                     apiRefusalCategory="cyber", refusedUserMessageUuid="u-ref",
+                     retractedMessageUuids=["gone-1", "gone-2", "gone-3", "gone-4", "gone-5"]),
+                dict(base, type="assistant", uuid="a-2", timestamp="2026-08-31T03:49:31Z",
+                     requestId="r2", message={"role": "assistant", "model": "claude-opus-4-8",
+                                              "content": [{"type": "text", "text": "AFTER-FALLBACK"}],
+                                              "usage": {"input_tokens": 1, "output_tokens": 1}}),
+                dict(base, type="system", uuid="s-aw", timestamp="2026-08-31T03:50:00Z",
+                     subtype="away_summary", content="AWAY-RECAP shipped it all"),
+            ]
+            srcc = proj / f"{SIDC}.jsonl"
+            srcc.write_text("\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+            t25c = ta.parse_transcript(srcc, 4000)
+            ev = [x for x in t25c.turns if x["kind"] == "system_record"
+                  and x.get("subtype") == "model_refusal_fallback"]
+            check("the refusal fallback record renders as exactly one event",
+                  len(ev) == 1, str([x.get("subtype") for x in t25c.turns if x["kind"] == "system_record"]))
+            ev0 = ev[0] if ev else {"badge": "", "detail": "", "text": ""}
+            check("its badge names the safeguard refusal, not the raw subtype",
+                  ev0["badge"] == "Model fallback after a safeguard refusal", ev0["badge"])
+            check("its detail states the model switch and the category",
+                  "claude-fable-5 -> claude-opus-4-8" in ev0["detail"] and "cyber" in ev0["detail"],
+                  ev0["detail"])
+            check("its body says how many messages were retracted and that they are absent",
+                  "5 message" in ev0["text"] and "not in the source" in ev0["text"], ev0["text"][-160:])
+            check("retractions are tallied on the transcript",
+                  sum(r["retracted"] for r in getattr(t25c, "retractions", [])) == 5,
+                  str(getattr(t25c, "retractions", None)))
+            aw = [x for x in t25c.turns if x["kind"] == "system_record" and x.get("subtype") == "away_summary"]
+            check("an away_summary record renders with its own badge and text",
+                  bool(aw) and aw[0]["badge"] == "Away summary" and "AWAY-RECAP" in aw[0]["text"],
+                  str(aw[:1]))
+            outc = tmp15c / "out"
+            pc = subprocess.run([sys.executable, str(SCRIPT), SIDC, "--format", "html,text,markdown",
+                                 "--archive-dir", str(outc), "--projects-root", str(tmp15c / "projects"),
+                                 "--quiet"], capture_output=True, text=True, cwd=str(SCRIPT.parent))
+            check("html/text/markdown render the fallback session", pc.returncode == 0,
+                  pc.stderr.strip()[-300:])
+            htmls = list(outc.glob("*.html"))
+            hbody = htmls[0].read_text(encoding="utf-8", errors="replace") if htmls else ""
+            check("the HTML session info carries a Harness retractions row",
+                  "Harness retractions" in hbody and "5 message" in hbody, str([f.name for f in htmls]))
+            for ext in ("txt", "md"):
+                fs = list(outc.glob(f"*.{ext}"))
+                body = fs[0].read_text(encoding="utf-8", errors="replace") if fs else ""
+                check(f"the {ext} export carries the model switch and the retraction count",
+                      "claude-fable-5 -> claude-opus-4-8" in body and "5 message" in body,
+                      str([f.name for f in fs]))
+        finally:
+            shutil.rmtree(tmp15c, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         # Found by the 2026-08-28 archive refresh (Claude Code 2.1.9x): a
         # running cost/usage snapshot and two artifact-comment bookkeeping
         # records. No transcript content; metadata, not "unhandled".

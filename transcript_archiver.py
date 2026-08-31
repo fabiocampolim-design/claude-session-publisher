@@ -57,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6.4"
+VERSION = "2.6.5"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -197,6 +197,11 @@ SYSTEM_SUBTYPE_POLICY = {
     "bridge_status":       ("render", "Session bridged"),
     "scheduled_task_fire": ("render", "Scheduled task fired"),
     "compact_boundary":    ("render", "Context compacted"),
+    # Claude Code 2.1.25x: a safeguard refusal that retracts messages and
+    # continues on a fallback model, and the away-summary recap. Both carry
+    # transcript content and render as events (seen 2026-08-31, Fable 5).
+    "model_refusal_fallback": ("render", "Model fallback after a safeguard refusal"),
+    "away_summary":        ("render", "Away summary"),
 }
 
 # Record types that carry no transcript content: UI state, indexes, snapshots.
@@ -829,6 +834,11 @@ class Transcript:
         self.classification = Counter()
         self.bridges: list[str] = []
         self.compactions: list[dict] = []
+        # Harness retractions: messages a safeguard refusal withdrew. They are
+        # named by uuid in the fallback record and usually absent from the
+        # source file, so the page must report them -- a gap the record count
+        # cannot show.
+        self.retractions: list[dict] = []
         self.effort = Counter()
         self.skills = Counter()
         self.mcp_servers = Counter()
@@ -867,6 +877,7 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                 if isinstance(p, str) and p.strip():
                     t.scheduled_prompts.add(p.strip())
 
+    file_uuids = {o.get("uuid") for o in objs if isinstance(o.get("uuid"), str)}
     tool_index: dict[str, dict] = {}
     seen_requests: set[str] = set()
 
@@ -1177,6 +1188,22 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                 detail = obj.get("cronKind") or ""
             elif sub == "bridge_status":
                 detail = obj.get("url") or ""
+            elif sub == "model_refusal_fallback":
+                orig = obj.get("originalModel") or "?"
+                fb = obj.get("fallbackModel") or "?"
+                cat = obj.get("apiRefusalCategory") or ""
+                gone = [u for u in (obj.get("retractedMessageUuids") or []) if isinstance(u, str)]
+                absent = [u for u in gone if u not in file_uuids]
+                detail = f"{orig} -> {fb}" + (f" (category: {cat})" if cat else "")
+                if gone:
+                    detail += f", {len(gone)} message(s) retracted"
+                    body = ((body + "\n\n") if body else "") + (
+                        f"{len(gone)} message(s) were retracted by the harness after this refusal"
+                        + (f"; {len(absent)} of them are not in the source transcript" if absent else "")
+                        + f". The conversation continued on {fb}.")
+                t.retractions.append({"ts": ts, "from": orig, "to": fb, "category": cat,
+                                      "retracted": len(gone), "absent": len(absent),
+                                      "refused": obj.get("refusedUserMessageUuid")})
             t.turns.append({"kind": "system_record", "ts": ts, "badge": label,
                             "detail": detail, "text": body, "subtype": sub})
             t.rendered_types[f"system record ({sub})"] += 1
@@ -1954,6 +1981,10 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                  + (", partial: earlier runs not covered" if rc["partial"] else "") + ")")
         if rc else "",
         info_row("Compactions", f"{len(t.compactions):,}") if t.compactions else "",
+        info_row("Harness retractions", esc("; ".join(
+            f"{r['retracted']} message(s) after a safeguard refusal at {(r['ts'] or '')[11:19]} UTC, "
+            f"{r['from']} -> {r['to']}" + (f", {r['absent']} absent from the source" if r["absent"] else "")
+            for r in t.retractions))) if t.retractions else "",
         info_row("Skills used", esc(", ".join(sorted(t.skills)))) if t.skills else "",
     ])
 
@@ -2142,6 +2173,11 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     for k, v in t.counted_only.items():
         if k.startswith("unhandled record type"):
             CON.note(f"warning: {v} record(s) of an unhandled type were counted, not rendered: {k}")
+    if t.retractions:
+        n = sum(r["retracted"] for r in t.retractions)
+        a = sum(r["absent"] for r in t.retractions)
+        CON.note(f"  note: {n} message(s) retracted by the harness after a safeguard refusal"
+                 + (f", {a} absent from the source" if a else "") + " (recorded in the document)")
     return meta
 
 
@@ -2717,7 +2753,10 @@ def _text_turns(turns, L, W, tool_output):
                 L.append("    [image omitted]")
             L.append("")
         else:
-            L += [""] + _turn_rule(str(turn.get("badge", kind)).upper(), ts, W, right=False)
+            label = str(turn.get("badge", kind)).upper()
+            if turn.get("detail"):
+                label += " - " + str(turn["detail"])
+            L += [""] + _turn_rule(label, ts, W, right=False)
             L += ["", soft_wrap((turn.get("text") or "").rstrip(), W), ""]
 
 
@@ -2817,6 +2856,8 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
                 L.append("")
             else:
                 badge = str(turn.get("badge", kind))
+                if turn.get("detail"):
+                    badge += " — " + str(turn["detail"])
                 L.append(f"> **{badge}** · {ts}")
                 if turn.get("text"):
                     L.extend(["", _md_fence(turn["text"].rstrip())])
@@ -3049,7 +3090,10 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                              inl("(image omitted in this format; the HTML "
                                  "archive holds it)") + "\n\n"))
             else:
-                badge = esc(shorten(str(turn.get("badge", kind))))
+                badge = str(turn.get("badge", kind))
+                if turn.get("detail"):
+                    badge += " - " + str(turn["detail"])
+                badge = esc(shorten(badge))
                 verbatim_boxes("systurn", badge, ts, (turn.get("text") or "").rstrip())
 
     emit_turns(t.turns)

@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.6.4"
+subtitle: "transcript_archiver.py v2.6.5"
 ---
 
 # claude-session-publisher — User Manual
@@ -206,6 +206,8 @@ harness, events, subagents), expand/collapse all, **theme toggle** (light or
 dark, remembered per browser; follows the OS until you choose), session
 facts, contents. Keys: `j`/`k` jump between human turns.
 
+A **safeguard refusal with model fallback** (Claude Code writes a `system/model_refusal_fallback` record when a message is refused and the session continues on another model) is rendered as an event in every format: the badge *Model fallback after a safeguard refusal*, the detail `<original> -> <fallback> (category: …), N message(s) retracted`, and a body stating how many of the retracted messages are absent from the source file. The HTML session info adds a *Harness retractions* row. The recap Claude Code prints when you return (`away_summary`) is the event *Away summary*.
+
 ### The index
 
 `--index` scans every session on disk and marks each **archived**, **stale**
@@ -336,7 +338,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-280 checks against the synthetic sessions in `examples/` (no real transcript
+290 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

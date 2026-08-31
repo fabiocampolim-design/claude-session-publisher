@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If claude-session-publisher helped you archive or cite an AI-assisted session, please cite it."
 title: "claude-session-publisher: full-fidelity, citable archives of Claude Code sessions"
 type: software
-version: "2.6.4"
-date-released: "2026-08-29"
+version: "2.6.5"
+date-released: "2026-08-31"
 license: Apache-2.0
 repository-code: "https://github.com/fabiocampolim-design/claude-session-publisher"
 authors:
