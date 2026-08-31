@@ -1127,6 +1127,23 @@ try:
             shutil.rmtree(tmp15c, ignore_errors=True)
 
         # ------------------------------------------------------------------
+        # Found 2026-08-31 while regenerating the real archive's companions:
+        # only the HTML said which archiver version produced it. A citable
+        # archive names its tool in every format.
+        print("\n[25h] Every format carries the archiver version stamp")
+        tmp15h = pathlib.Path(tempfile.mkdtemp(prefix="ta-test25h-"))
+        try:
+            ph = run(SAMPLE, "text,markdown,latex", tmp15h, extra=("--quiet",))
+            check("text/markdown/latex export exits 0", ph.returncode == 0, ph.stderr[-300:])
+            for ext in ("txt", "md", "tex"):
+                fs = list(tmp15h.glob(f"*.{ext}"))
+                body = fs[0].read_text(encoding="utf-8", errors="replace") if fs else ""
+                check(f"the {ext} export names archiver v{ta.VERSION}",
+                      f"archiver v{ta.VERSION}" in body, str([f.name for f in fs]))
+        finally:
+            shutil.rmtree(tmp15h, ignore_errors=True)
+
+        # ------------------------------------------------------------------
         # Found by the 2026-08-28 archive refresh (Claude Code 2.1.9x): a
         # running cost/usage snapshot and two artifact-comment bookkeeping
         # records. No transcript content; metadata, not "unhandled".

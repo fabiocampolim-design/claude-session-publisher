@@ -57,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6.5"
+VERSION = "2.6.6"
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -2771,6 +2771,7 @@ def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
     L += ["FIDELITY REPORT", "-" * 15, ""]
     for label, n in fidelity_lines(t):
         L.append("  " + label.ljust(52) + format(n, ",").rjust(9))
+    L.append(f"  archiver v{VERSION}")
     for aid, _af, at in agents:
         L.append("  " + f"subagent transcript agent-{aid}"
                  f"{'' if subagents_on else ' (not rendered)'}".ljust(52)
@@ -2810,6 +2811,7 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
     L += ["## Fidelity report", ""]
     for label, n in fidelity_lines(t):
         L.append(f"- {label}: {n:,}")
+    L.append(f"- archiver v{VERSION}")
     for aid, _af, at in agents:
         L.append(f"- subagent transcript agent-{aid}"
                  f"{'' if subagents_on else ' (not rendered)'}: "
@@ -3009,6 +3011,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     B.append("\\begin{tabular}{lr}\n\\toprule\n")
     for label, n in fidelity_lines(t):
         B.append(esc(label) + " & " + format(n, ",") + " \\\\\n")
+    B.append("\\multicolumn{2}{l}{archiver v" + esc(VERSION) + "} \\\\\n")
     B.append("\\bottomrule\n\\end{tabular}\n\n")
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
     if ctx.get("cost_note"):

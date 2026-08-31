@@ -3,6 +3,19 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.6.6 — 2026-08-31
+
+**Fixed**
+- **Only the HTML named the archiver version.** The text, Markdown and
+  LaTeX exports now carry `archiver v…` in their fidelity report, as the
+  HTML and the index always did — a citable archive names its tool in every
+  format. Three checks.
+- The suite never writes into the user's archive: it snapshots
+  `CLAUDE_ARCHIVE_DIR`, points the variable at a throwaway directory before
+  the module loads, and its last section asserts both stayed untouched. The
+  `--list-conversations` check had been leaving an audit log in the real
+  archive on every run (83 of them found). Two checks.
+
 ## 2.6.5 — 2026-08-31
 
 Found by regenerating the whole real archive after the first Fable 5 sessions.
