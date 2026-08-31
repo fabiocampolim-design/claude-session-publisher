@@ -123,7 +123,7 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
   and the suite compiles a table-heavy session and counts the pages to prove
   the rows arrived. A clean exit code is not evidence the content survived
   the typesetter.
-- Standard library only, one file, 290 checks in the test suite, pyflakes and
+- Standard library only, one file, 292 checks in the test suite, pyflakes and
   CI on Linux/Windows/macOS.
 
 ## How this compares
@@ -289,7 +289,7 @@ records, and each is now covered by a test:
 python tests/test_archiver.py
 ```
 
-290 checks, run against the synthetic sessions in `examples/` —
+292 checks, run against the synthetic sessions in `examples/` —
 self-contained, no real transcript needed. The LaTeX/PDF compile checks are
 skipped (not failed) when no TeX installation is on `PATH`; everything else
 needs only Python. The suite also verifies that the user manual and
@@ -337,7 +337,7 @@ pass, survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded — the last of them a table that
 compiled cleanly while dropping its rows), bringing the history to
 38 commits; the housekeeping that followed — keeping the vendored conformance
-checker byte-identical to the publishing playbook — brings it to 45 commits.
+checker byte-identical to the publishing playbook — brings it to 46 commits.
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
@@ -348,7 +348,7 @@ scientific papers use):
 | **Conceptualization** | The premise — a full-fidelity, self-contained record of an AI-assisted session, fit for scientific reporting — and most feature ideas: P/R citation tags, the tool-output switch, the live-activity index, pagination | The render/fold/count reconciliation model that became the fidelity report |
 | **Methodology** | The priority order (content fidelity first, then sources, then formats); the academic-publishing requirements that shaped the LaTeX fragment | Chain resolution by uuid-set comparison; per-`requestId` usage dedup; the verbatim-human-turn rule |
 | **Software** | — | All of it |
-| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*); commissioned the review and code-review passes | The 290-check test suite and CI; the review-driven survival runs |
+| **Validation** | Broke every build against hundreds of thousands of records from a real archive; caught the stale-page, overflow and layout defects; set the bar (*"this needs high accuracy"*); commissioned the review and code-review passes | The 292-check test suite and CI; the review-driven survival runs |
 | **Investigation** | Directed the survey of neighbouring tools | Code and documentation analysis for the comparison section |
 | **Data curation** | — | The synthetic sample and the showcase conversation, built to carry exactly the cases that had broken on real data |
 | **Visualization** | The chat layout (human right, Claude left), box styling, tag and timestamp placement | The HTML/CSS realising it |

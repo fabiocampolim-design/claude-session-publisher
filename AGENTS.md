@@ -150,6 +150,10 @@ counts; a human turn's `div.raw` computes to `white-space: pre-wrap`.
 
 ## Development rules (if you change the tool)
 
+- The suite never touches the user's archive: it snapshots
+  `CLAUDE_ARCHIVE_DIR`, points the variable at a throwaway directory before
+  loading the module, and its last checks assert both stayed untouched. Every
+  subprocess check passes `--archive-dir` explicitly.
 - Failing-first test in `tests/test_archiver.py` for every fix or feature;
   `python tests/test_archiver.py` must end `ALL GREEN`. TeX checks skip
   without TeX; never make them fail.

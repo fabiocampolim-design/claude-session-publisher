@@ -34,6 +34,26 @@ SAMPLE = os.environ.get("SAMPLE_SESSION", "00000000-0000-4000-8000-000000000001"
 # One sample built to carry all of them is both smaller and harder to fool.
 SMALL = BIG = RICH_ID = SAMPLE
 
+# The suite must never write into the user's real archive. Snapshot it before
+# anything runs; the last check compares. (Found 2026-08-31: 83 audit logs of
+# the --list-conversations check had landed in CLAUDE_ARCHIVE_DIR.)
+_REAL_ARCHIVE = (pathlib.Path(os.environ["CLAUDE_ARCHIVE_DIR"])
+                 if os.environ.get("CLAUDE_ARCHIVE_DIR") else None)
+
+
+def _archive_snapshot():
+    if not _REAL_ARCHIVE or not _REAL_ARCHIVE.is_dir():
+        return None
+    return {str(f.relative_to(_REAL_ARCHIVE)) for f in _REAL_ARCHIVE.rglob("*") if f.is_file()}
+
+
+_ARCHIVE_BEFORE = _archive_snapshot()
+# Every check names its --archive-dir; should one forget, the default must be a
+# throwaway, never the user's archive. Set before the archiver module is loaded
+# (it reads the variable at import) and inherited by every subprocess.
+_SUITE_DEFAULT_ARCHIVE = pathlib.Path(tempfile.mkdtemp(prefix="ta-default-archive-"))
+os.environ["CLAUDE_ARCHIVE_DIR"] = str(_SUITE_DEFAULT_ARCHIVE)
+
 spec = importlib.util.spec_from_file_location("ta", SCRIPT)
 ta = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ta)
@@ -592,7 +612,7 @@ try:
         try:
             p = subprocess.run(
                 [sys.executable, str(SCRIPT), "--import-claude-ai", str(CAI),
-                 "--list-conversations"],
+                 "--list-conversations", "--archive-dir", str(tmp6)],
                 capture_output=True, text=True, cwd=str(SCRIPT.parent))
             check("--list-conversations exits 0", p.returncode == 0,
                   p.stderr.strip()[-300:])
@@ -1856,6 +1876,19 @@ try:
         shutil.rmtree(tmp2, ignore_errors=True)
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
+
+print("\n[36] The suite leaves the user's real archive untouched")
+if _ARCHIVE_BEFORE is None:
+    skip("no file appeared in CLAUDE_ARCHIVE_DIR during the suite",
+         "CLAUDE_ARCHIVE_DIR unset or missing")
+else:
+    _new = sorted(_archive_snapshot() - _ARCHIVE_BEFORE)
+    check("no file appeared in CLAUDE_ARCHIVE_DIR during the suite", not _new, str(_new[:5]))
+_stray = sorted(str(f.relative_to(_SUITE_DEFAULT_ARCHIVE))
+                for f in _SUITE_DEFAULT_ARCHIVE.rglob("*") if f.is_file())
+check("every check named its --archive-dir (the default archive dir stayed empty)",
+      not _stray, str(_stray[:5]))
+shutil.rmtree(_SUITE_DEFAULT_ARCHIVE, ignore_errors=True)
 
 print(f"\n{CHECKS[0] - len(FAILURES)}/{CHECKS[0]} checks passed")
 if FAILURES:
