@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.6.6"
+subtitle: "transcript_archiver.py v2.7.0"
 ---
 
 # claude-session-publisher — User Manual
@@ -89,6 +89,7 @@ hard-coded. `--help` prints each option with its default.
 | `--no-follow-chain` | off | archive exactly the id given even if a more complete continuation exists |
 | `--fragment` | off | with `--format latex`: body only, no preamble, transliterated to compile under pdflatex as well as XeLaTeX. Cannot be combined with `pdf` |
 | `--paginate N` | `0` | split the HTML into pages of N turns; page 1 keeps the summary, usage and fidelity sections; the sidebar links across pages |
+| `--lang CODE` | `$CLAUDE_ARCHIVE_LANG` or `en` | `en`, `pt-BR`, `es`, `de`, `fr`: the language of the archiver's own words in every format and in the index. The conversation is never translated (see §4, *Language*) |
 
 ### Index
 
@@ -153,6 +154,29 @@ Turn kinds and how each format shows them:
 | Pasted image | embedded | announced as omitted | announced as omitted |
 | Harness / system / event | collapsed lane with the classification evidence | labelled blocks | labelled boxes |
 | Subagent transcript | collapsible appendix, linked from the spawning call | appendix section | appendix section |
+
+### Language
+
+`--lang pt-BR|es|de|fr` (or the environment variable `CLAUDE_ARCHIVE_LANG`;
+the flag wins; default `en`) sets the language of everything the archiver
+itself writes: the page shell and its controls, the turn labels, the session
+information, the usage and cost notes, the fidelity report, the subagent
+appendix, the format notes of the text/Markdown/LaTeX outputs, and the index
+page. `<html lang>` and the embedded metadata field `lang` record the choice;
+the standalone LaTeX sets the matching polyglossia language (hyphenation)
+when polyglossia is installed, and compiles without it.
+
+The conversation is never translated. Prompts, answers, thinking, tool
+names, tool input and output, system and harness text, model names, titles,
+paths, dates (ISO) and numbers are the same bytes in every language — the
+suite renders the fixture in all five and checks that every conversation
+fragment of the English page is present verbatim in the others. Event badges
+and attachment labels are translated where rendered; the record-type names
+in the fidelity tables (`human turn`, `tool_use`, …) are parser vocabulary
+and stay English, as does the `archiver v…` stamp the index reads back.
+The audit log, the console (`--verbose`) and `--help` stay English whatever
+the language. An unknown code — on the flag or in the variable — is refused
+before anything is written.
 
 ### Reference tags
 
@@ -338,7 +362,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-296 checks against the synthetic sessions in `examples/` (no real transcript
+392 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

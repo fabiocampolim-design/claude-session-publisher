@@ -57,7 +57,811 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.6.6"
+VERSION = "2.7.0"
+
+# ---------------------------------------------------------------------------
+# Document language (--lang / CLAUDE_ARCHIVE_LANG)
+#
+# Only the archiver's own words change: headings, labels, notes, the index.
+# The conversation -- prompts, answers, thinking, tool names, tool input and
+# output, system text, model names, titles, paths -- is never touched, and
+# the audit log, the console and --help stay English. Keys are the English
+# text; a missing entry falls back to it at runtime, and the suite fails on
+# any key that is not translated in every language, so no fallback ships.
+# ---------------------------------------------------------------------------
+
+LANGS = ("en", "pt-BR", "es", "de", "fr")
+LANG = "en"
+
+
+def _(s: str) -> str:
+    if LANG == "en":
+        return s
+    return L10N[LANG].get(s, s)
+
+
+# Parser labels (badges) are English identifiers at parse time and are
+# translated where they are rendered, through the same lookup.
+L10N_DYNAMIC_KEYS = (
+    "Context compaction summary", "Background task notification",
+    "Harness-injected prompt", "Scheduled continuation",
+    "Instructions injected into the turn",
+)
+
+_TEX_LANGUAGE = {
+    "pt-BR": "[variant=brazilian]{portuguese}",
+    "es": "{spanish}", "de": "{german}", "fr": "{french}",
+}
+
+_L10N_ROWS = [
+    # (english, pt-BR, es, de, fr)
+    # -- page shell -----------------------------------------------------
+    ("Session Transcript", "Transcrição da sessão", "Transcripción de la sesión",
+     "Sitzungstranskript", "Transcription de session"),
+    (" — page {k}/{n}", " — página {k}/{n}", " — página {k}/{n}",
+     " — Seite {k}/{n}", " — page {k}/{n}"),
+    ("Search turns", "Buscar nos turnos", "Buscar en los turnos",
+     "Beiträge durchsuchen", "Rechercher dans les tours"),
+    ("Filter contents  ( / )", "Filtrar o sumário  ( / )", "Filtrar el contenido  ( / )",
+     "Inhalt filtern  ( / )", "Filtrer le sommaire  ( / )"),
+    ("Filter contents", "Filtrar o sumário", "Filtrar el contenido",
+     "Inhalt filtern", "Filtrer le sommaire"),
+    ("thinking", "raciocínio", "razonamiento", "Denken", "réflexion"),
+    ("tools", "ferramentas", "herramientas", "Werkzeuge", "outils"),
+    ("harness", "harness", "harness", "Harness", "harness"),
+    ("events", "eventos", "eventos", "Ereignisse", "événements"),
+    ("subagents", "subagentes", "subagentes", "Subagenten", "sous-agents"),
+    ("Expand all", "Expandir tudo", "Expandir todo", "Alle aufklappen", "Tout déplier"),
+    ("Collapse all", "Recolher tudo", "Contraer todo", "Alle einklappen", "Tout replier"),
+    ("Dark theme", "Tema escuro", "Tema oscuro", "Dunkles Design", "Thème sombre"),
+    ("Light theme", "Tema claro", "Tema claro", "Helles Design", "Thème clair"),
+    ("{shown} of {total} turns match", "{shown} de {total} turnos correspondem",
+     "{shown} de {total} turnos coinciden", "{shown} von {total} Beiträgen passen",
+     "{shown} tours sur {total} correspondent"),
+    ("Session", "Sessão", "Sesión", "Sitzung", "Session"),
+    ("Contents", "Sumário", "Contenido", "Inhalt", "Sommaire"),
+    ("Timestamps are local; hover for UTC. <kbd>j</kbd>/<kbd>k</kbd> jump between human turns, "
+     "<kbd>/</kbd> filters the contents list, the search box hides turns that do not match. "
+     "Thinking, tool I/O and harness events are collapsed &mdash; use the toggles to hide a lane entirely.",
+     "Os horários são locais; passe o mouse para ver em UTC. <kbd>j</kbd>/<kbd>k</kbd> saltam entre "
+     "turnos humanos, <kbd>/</kbd> filtra o sumário, a caixa de busca oculta os turnos que não "
+     "correspondem. Raciocínio, E/S de ferramentas e eventos do harness ficam recolhidos &mdash; use "
+     "as caixas de seleção para ocultar uma faixa inteira.",
+     "Las horas son locales; pase el ratón para ver UTC. <kbd>j</kbd>/<kbd>k</kbd> saltan entre "
+     "turnos humanos, <kbd>/</kbd> filtra el contenido, el cuadro de búsqueda oculta los turnos que "
+     "no coinciden. Razonamiento, E/S de herramientas y eventos del harness están contraídos &mdash; "
+     "use las casillas para ocultar una franja por completo.",
+     "Zeitangaben sind lokal; UTC beim Überfahren. <kbd>j</kbd>/<kbd>k</kbd> springen zwischen "
+     "menschlichen Beiträgen, <kbd>/</kbd> filtert das Inhaltsverzeichnis, das Suchfeld blendet "
+     "nicht passende Beiträge aus. Denken, Werkzeug-E/A und Harness-Ereignisse sind eingeklappt "
+     "&mdash; mit den Schaltern lässt sich eine Spur ganz ausblenden.",
+     "Les horodatages sont locaux ; survolez pour l'UTC. <kbd>j</kbd>/<kbd>k</kbd> passent d'un tour "
+     "humain à l'autre, <kbd>/</kbd> filtre le sommaire, le champ de recherche masque les tours sans "
+     "correspondance. Réflexion, E/S des outils et événements du harness sont repliés &mdash; les "
+     "cases à cocher masquent une voie entière."),
+    ("Page {cur} of {n}", "Página {cur} de {n}", "Página {cur} de {n}",
+     "Seite {cur} von {n}", "Page {cur} sur {n}"),
+    ("&larr; prev", "&larr; anterior", "&larr; anterior", "&larr; zurück", "&larr; précédente"),
+    ("next &rarr;", "próxima &rarr;", "siguiente &rarr;", "weiter &rarr;", "suivante &rarr;"),
+    # -- turn labels ----------------------------------------------------
+    ("Human", "Humano", "Humano", "Mensch", "Humain"),
+    ("System", "Sistema", "Sistema", "System", "Système"),
+    ("Event", "Evento", "Evento", "Ereignis", "Événement"),
+    ("Thinking", "Raciocínio", "Razonamiento", "Denken", "Réflexion"),
+    ("subagent", "subagente", "subagente", "Subagent", "sous-agent"),
+    ("transcript &darr;", "transcrição &darr;", "transcripción &darr;",
+     "Transkript &darr;", "transcription &darr;"),
+    ("how this was classified", "como isto foi classificado", "cómo se clasificó esto",
+     "wie dies eingeordnet wurde", "comment ceci a été classé"),
+    ("pasted image", "imagem colada", "imagen pegada", "eingefügtes Bild", "image collée"),
+    ("raw", "bruto", "bruto", "roh", "brut"),
+    ("(no content)", "(sem conteúdo)", "(sin contenido)", "(kein Inhalt)", "(aucun contenu)"),
+    ("Input", "Entrada", "Entrada", "Eingabe", "Entrée"),
+    ("Output", "Saída", "Salida", "Ausgabe", "Sortie"),
+    ("Output (error)", "Saída (erro)", "Salida (error)", "Ausgabe (Fehler)", "Sortie (erreur)"),
+    ("{n} chars elided", "{n} caracteres omitidos", "{n} caracteres omitidos",
+     "{n} Zeichen ausgelassen", "{n} caractères omis"),
+    ("(empty result)", "(resultado vazio)", "(resultado vacío)", "(leeres Ergebnis)", "(résultat vide)"),
+    ("No result in the source &mdash; this call was still running (or was interrupted) when the "
+     "transcript was written.",
+     "Sem resultado na fonte &mdash; esta chamada ainda estava em execução (ou foi interrompida) "
+     "quando a transcrição foi gravada.",
+     "Sin resultado en la fuente &mdash; esta llamada seguía en ejecución (o fue interrumpida) "
+     "cuando se escribió la transcripción.",
+     "Kein Ergebnis in der Quelle &mdash; dieser Aufruf lief noch (oder wurde unterbrochen), als "
+     "das Transkript geschrieben wurde.",
+     "Aucun résultat dans la source &mdash; cet appel était encore en cours (ou a été interrompu) "
+     "quand la transcription a été écrite."),
+    ("Screenshot", "Captura de tela", "Captura de pantalla", "Bildschirmfoto", "Capture d'écran"),
+    ("tool screenshot", "captura de tela da ferramenta", "captura de pantalla de la herramienta",
+     "Bildschirmfoto des Werkzeugs", "capture d'écran de l'outil"),
+    # -- parser labels, translated where rendered ------------------------
+    ("Context compaction summary", "Resumo de compactação do contexto",
+     "Resumen de compactación del contexto", "Zusammenfassung der Kontextkompaktierung",
+     "Résumé de compactage du contexte"),
+    ("Background task notification", "Notificação de tarefa em segundo plano",
+     "Notificación de tarea en segundo plano", "Benachrichtigung einer Hintergrundaufgabe",
+     "Notification de tâche en arrière-plan"),
+    ("Harness-injected prompt", "Prompt injetado pelo harness", "Prompt inyectado por el harness",
+     "Vom Harness eingefügter Prompt", "Prompt injecté par le harness"),
+    ("Scheduled continuation", "Continuação agendada", "Continuación programada",
+     "Geplante Fortsetzung", "Reprise planifiée"),
+    ("Instructions injected into the turn", "Instruções injetadas no turno",
+     "Instrucciones inyectadas en el turno", "In den Beitrag eingefügte Anweisungen",
+     "Instructions injectées dans le tour"),
+    ("Hook", "Hook", "Hook", "Hook", "Hook"),
+    ("Hook context injected", "Contexto de hook injetado", "Contexto de hook inyectado",
+     "Hook-Kontext eingefügt", "Contexte de hook injecté"),
+    ("Hook message", "Mensagem de hook", "Mensaje de hook", "Hook-Nachricht", "Message de hook"),
+    ("Skill listing injected", "Lista de skills injetada", "Lista de skills inyectada",
+     "Skill-Liste eingefügt", "Liste des skills injectée"),
+    ("Skill invoked", "Skill invocada", "Skill invocada", "Skill aufgerufen", "Skill invoquée"),
+    ("Project memory injected", "Memória do projeto injetada", "Memoria del proyecto inyectada",
+     "Projektgedächtnis eingefügt", "Mémoire du projet injectée"),
+    ("File injected", "Arquivo injetado", "Archivo inyectado", "Datei eingefügt", "Fichier injecté"),
+    ("File edit snapshot", "Instantâneo de edição de arquivo", "Instantánea de edición de archivo",
+     "Momentaufnahme einer Dateiänderung", "Instantané d'édition de fichier"),
+    ("File carried through compaction", "Arquivo preservado na compactação",
+     "Archivo conservado en la compactación", "Datei über die Kompaktierung mitgeführt",
+     "Fichier conservé lors du compactage"),
+    ("Read truncated", "Leitura truncada", "Lectura truncada", "Lesen abgeschnitten", "Lecture tronquée"),
+    ("Deferred tools changed", "Ferramentas adiadas alteradas", "Herramientas diferidas modificadas",
+     "Zurückgestellte Werkzeuge geändert", "Outils différés modifiés"),
+    ("Agent listing changed", "Lista de agentes alterada", "Lista de agentes modificada",
+     "Agentenliste geändert", "Liste des agents modifiée"),
+    ("MCP instructions injected", "Instruções MCP injetadas", "Instrucciones MCP inyectadas",
+     "MCP-Anweisungen eingefügt", "Instructions MCP injectées"),
+    ("Command permissions", "Permissões de comando", "Permisos de comando",
+     "Befehlsberechtigungen", "Permissions de commande"),
+    ("Task reminder", "Lembrete de tarefa", "Recordatorio de tarea", "Aufgabenerinnerung", "Rappel de tâche"),
+    ("Command queued", "Comando enfileirado", "Comando en cola", "Befehl eingereiht", "Commande mise en file"),
+    ("Date changed", "Data alterada", "Fecha cambiada", "Datum geändert", "Date modifiée"),
+    ("Token-budget reminder", "Lembrete de orçamento de tokens", "Recordatorio de presupuesto de tokens",
+     "Erinnerung an das Token-Budget", "Rappel du budget de jetons"),
+    ("Turn duration", "Duração do turno", "Duración del turno", "Beitragsdauer", "Durée du tour"),
+    ("Local slash command", "Comando de barra local", "Comando de barra local",
+     "Lokaler Slash-Befehl", "Commande slash locale"),
+    ("Session bridged", "Sessão conectada por ponte", "Sesión enlazada", "Sitzung überbrückt", "Session pontée"),
+    ("Scheduled task fired", "Tarefa agendada disparada", "Tarea programada ejecutada",
+     "Geplante Aufgabe ausgelöst", "Tâche planifiée déclenchée"),
+    ("Context compacted", "Contexto compactado", "Contexto compactado", "Kontext kompaktiert", "Contexte compacté"),
+    ("Model fallback after a safeguard refusal", "Modelo substituído após uma recusa de segurança",
+     "Modelo de respaldo tras un rechazo de seguridad", "Modellwechsel nach einer Schutzverweigerung",
+     "Modèle de repli après un refus de sécurité"),
+    ("Away summary", "Resumo de ausência", "Resumen de ausencia", "Abwesenheitszusammenfassung", "Résumé d'absence"),
+    # -- session info ---------------------------------------------------
+    ("Session ID", "ID da sessão", "ID de la sesión", "Sitzungs-ID", "ID de session"),
+    ("Requested", "Solicitada", "Solicitada", "Angefordert", "Demandée"),
+    ("Started", "Início", "Inicio", "Beginn", "Début"),
+    ("Last record", "Último registro", "Último registro", "Letzter Datensatz", "Dernier enregistrement"),
+    ("Archived at", "Arquivada em", "Archivada el", "Archiviert am", "Archivée le"),
+    ("Wall clock", "Tempo decorrido", "Tiempo transcurrido", "Gesamtdauer", "Durée totale"),
+    ("Active time", "Tempo ativo", "Tiempo activo", "Aktive Zeit", "Temps actif"),
+    ("summed from {n} turn_duration records", "somado de {n} registros turn_duration",
+     "sumado de {n} registros turn_duration", "Summe aus {n} turn_duration-Datensätzen",
+     "somme de {n} enregistrements turn_duration"),
+    ("estimated (no turn_duration records; gaps over 20m ignored)",
+     "estimado (sem registros turn_duration; intervalos acima de 20 min ignorados)",
+     "estimado (sin registros turn_duration; pausas de más de 20 min ignoradas)",
+     "geschätzt (keine turn_duration-Datensätze; Pausen über 20 min ignoriert)",
+     "estimé (aucun enregistrement turn_duration ; pauses de plus de 20 min ignorées)"),
+    ("Models", "Modelos", "Modelos", "Modelle", "Modèles"),
+    ("Effort", "Esforço", "Esfuerzo", "Aufwand", "Effort"),
+    ("Working dir", "Diretório de trabalho", "Directorio de trabajo", "Arbeitsverzeichnis", "Répertoire de travail"),
+    ("Human turns", "Turnos humanos", "Turnos humanos", "Menschliche Beiträge", "Tours humains"),
+    ("Claude messages", "Mensagens do Claude", "Mensajes de Claude", "Claude-Nachrichten", "Messages de Claude"),
+    ("Thinking blocks", "Blocos de raciocínio", "Bloques de razonamiento", "Denkblöcke", "Blocs de réflexion"),
+    ("{with} with text, {empty} empty", "{with} com texto, {empty} vazios",
+     "{with} con texto, {empty} vacíos", "{with} mit Text, {empty} leer", "{with} avec texte, {empty} vides"),
+    ("Claude Code requests thinking with display=omitted, so the reasoning text is never written "
+     "to the transcript",
+     "O Claude Code solicita o raciocínio com display=omitted, portanto o texto do raciocínio "
+     "nunca é gravado na transcrição",
+     "Claude Code solicita el razonamiento con display=omitted, así que el texto del razonamiento "
+     "nunca se escribe en la transcripción",
+     "Claude Code fordert das Denken mit display=omitted an, daher wird der Denktext nie ins "
+     "Transkript geschrieben",
+     "Claude Code demande la réflexion avec display=omitted, le texte du raisonnement n'est donc "
+     "jamais écrit dans la transcription"),
+    ("Tool calls", "Chamadas de ferramenta", "Llamadas a herramientas", "Werkzeugaufrufe", "Appels d'outils"),
+    ("Subagents", "Subagentes", "Subagentes", "Subagenten", "Sous-agents"),
+    ("{n} transcript(s), {records} records", "{n} transcrição(ões), {records} registros",
+     "{n} transcripción(es), {records} registros", "{n} Transkript(e), {records} Datensätze",
+     "{n} transcription(s), {records} enregistrements"),
+    (" (not rendered: --subagents off)", " (não renderizadas: --subagents off)",
+     " (no renderizadas: --subagents off)", " (nicht dargestellt: --subagents off)",
+     " (non rendues : --subagents off)"),
+    ("Harness events", "Eventos do harness", "Eventos del harness", "Harness-Ereignisse", "Événements du harness"),
+    ("Output tokens", "Tokens de saída", "Tokens de salida", "Ausgabe-Tokens", "Jetons de sortie"),
+    ("Cache reads", "Leituras de cache", "Lecturas de caché", "Cache-Lesezugriffe", "Lectures du cache"),
+    ("List cost", "Custo de tabela", "Costo de lista", "Listenpreis", "Coût catalogue"),
+    ("Reported cost", "Custo informado", "Costo informado", "Gemeldete Kosten", "Coût déclaré"),
+    ("${usd} reported by Claude Code ({runs} run(s){partial})",
+     "${usd} informados pelo Claude Code ({runs} execução(ões){partial})",
+     "${usd} informados por Claude Code ({runs} ejecución(es){partial})",
+     "${usd} von Claude Code gemeldet ({runs} Lauf/Läufe{partial})",
+     "${usd} déclarés par Claude Code ({runs} exécution(s){partial})"),
+    (", partial: earlier runs not covered", ", parcial: execuções anteriores não cobertas",
+     ", parcial: ejecuciones anteriores no cubiertas", ", unvollständig: frühere Läufe nicht erfasst",
+     ", partiel : exécutions antérieures non couvertes"),
+    ("Compactions", "Compactações", "Compactaciones", "Kompaktierungen", "Compactages"),
+    ("Harness retractions", "Retratações do harness", "Retractaciones del harness",
+     "Harness-Rücknahmen", "Retraits par le harness"),
+    ("{n} message(s) after a safeguard refusal at {time} UTC, {src} -> {dst}",
+     "{n} mensagem(ns) após uma recusa de segurança às {time} UTC, {src} -> {dst}",
+     "{n} mensaje(s) tras un rechazo de seguridad a las {time} UTC, {src} -> {dst}",
+     "{n} Nachricht(en) nach einer Schutzverweigerung um {time} UTC, {src} -> {dst}",
+     "{n} message(s) après un refus de sécurité à {time} UTC, {src} -> {dst}"),
+    (", {n} absent from the source", ", {n} ausente(s) da fonte", ", {n} ausente(s) de la fuente",
+     ", {n} nicht in der Quelle", ", {n} absent(s) de la source"),
+    ("Skills used", "Skills usadas", "Skills usadas", "Verwendete Skills", "Skills utilisées"),
+    ("{start} – {end} · {humans} human turns · {tools} tool calls · ",
+     "{start} – {end} · {humans} turnos humanos · {tools} chamadas de ferramenta · ",
+     "{start} – {end} · {humans} turnos humanos · {tools} llamadas a herramientas · ",
+     "{start} – {end} · {humans} menschliche Beiträge · {tools} Werkzeugaufrufe · ",
+     "{start} – {end} · {humans} tours humains · {tools} appels d'outils · "),
+    ("${usd} reported by Claude Code", "${usd} informados pelo Claude Code",
+     "${usd} informados por Claude Code", "${usd} von Claude Code gemeldet", "${usd} déclarés par Claude Code"),
+    ("${usd} at list price", "${usd} a preço de tabela", "${usd} a precio de lista",
+     "${usd} zum Listenpreis", "${usd} au prix catalogue"),
+    # -- sections -------------------------------------------------------
+    ("Session summary", "Resumo da sessão", "Resumen de la sesión", "Sitzungszusammenfassung", "Résumé de la session"),
+    ("Usage &amp; cost", "Uso e custo", "Uso y costo", "Nutzung &amp; Kosten", "Utilisation &amp; coût"),
+    ("Fidelity report", "Relatório de fidelidade", "Informe de fidelidad",
+     "Bericht zur Wiedergabetreue", "Rapport de fidélité"),
+    ("Subagent transcripts", "Transcrições de subagentes", "Transcripciones de subagentes",
+     "Subagenten-Transkripte", "Transcriptions des sous-agents"),
+    ("Conversations run by background agents this session spawned. Each lives in its own file "
+     "beside the session and is rendered here in full, with the same rules as the main transcript.",
+     "Conversas conduzidas por agentes em segundo plano criados nesta sessão. Cada uma fica em seu "
+     "próprio arquivo ao lado da sessão e é renderizada aqui na íntegra, com as mesmas regras da "
+     "transcrição principal.",
+     "Conversaciones de los agentes en segundo plano creados en esta sesión. Cada una vive en su "
+     "propio archivo junto a la sesión y se renderiza aquí completa, con las mismas reglas que la "
+     "transcripción principal.",
+     "Gespräche der Hintergrundagenten, die diese Sitzung gestartet hat. Jedes liegt in einer "
+     "eigenen Datei neben der Sitzung und wird hier vollständig dargestellt, nach denselben Regeln "
+     "wie das Haupttranskript.",
+     "Conversations menées par les agents d'arrière-plan lancés par cette session. Chacune vit dans "
+     "son propre fichier à côté de la session et est rendue ici intégralement, selon les mêmes "
+     "règles que la transcription principale."),
+    ("{records} records &middot; {turns} turns &middot; turns tagged A{k}.P/A{k}.R",
+     "{records} registros &middot; {turns} turnos &middot; turnos marcados A{k}.P/A{k}.R",
+     "{records} registros &middot; {turns} turnos &middot; turnos etiquetados A{k}.P/A{k}.R",
+     "{records} Datensätze &middot; {turns} Beiträge &middot; Beiträge markiert A{k}.P/A{k}.R",
+     "{records} enregistrements &middot; {turns} tours &middot; tours étiquetés A{k}.P/A{k}.R"),
+    (" (archived here)", " (arquivada aqui)", " (archivada aquí)", " (hier archiviert)", " (archivée ici)"),
+    ("{shared} shared records, {records} total", "{shared} registros em comum, {records} no total",
+     "{shared} registros compartidos, {records} en total", "{shared} gemeinsame Datensätze, {records} gesamt",
+     "{shared} enregistrements communs, {records} au total"),
+    ("<strong>This conversation spans more than one transcript file.</strong> A resumed or bridged "
+     "session is written to a new <code>.jsonl</code> that repeats the earlier records, so the most "
+     "complete file is the one archived here.",
+     "<strong>Esta conversa abrange mais de um arquivo de transcrição.</strong> Uma sessão retomada "
+     "ou conectada por ponte é gravada em um novo <code>.jsonl</code> que repete os registros "
+     "anteriores; por isso o arquivo mais completo é o arquivado aqui.",
+     "<strong>Esta conversación abarca más de un archivo de transcripción.</strong> Una sesión "
+     "reanudada o enlazada se escribe en un nuevo <code>.jsonl</code> que repite los registros "
+     "anteriores, así que el archivo más completo es el archivado aquí.",
+     "<strong>Dieses Gespräch erstreckt sich über mehr als eine Transkriptdatei.</strong> Eine "
+     "fortgesetzte oder überbrückte Sitzung wird in eine neue <code>.jsonl</code> geschrieben, die "
+     "die früheren Datensätze wiederholt; die vollständigste Datei ist daher die hier archivierte.",
+     "<strong>Cette conversation s'étend sur plusieurs fichiers de transcription.</strong> Une "
+     "session reprise ou pontée est écrite dans un nouveau <code>.jsonl</code> qui répète les "
+     "enregistrements antérieurs ; le fichier le plus complet est donc celui archivé ici."),
+    # -- usage table ----------------------------------------------------
+    ("model", "modelo", "modelo", "Modell", "modèle"),
+    ("requests", "requisições", "solicitudes", "Anfragen", "requêtes"),
+    ("input", "entrada", "entrada", "Eingabe", "entrée"),
+    ("output", "saída", "salida", "Ausgabe", "sortie"),
+    ("cache read", "leitura de cache", "lectura de caché", "Cache-Lesen", "lecture cache"),
+    ("cache write", "escrita de cache", "escritura de caché", "Cache-Schreiben", "écriture cache"),
+    ("list cost", "custo de tabela", "costo de lista", "Listenpreis", "coût catalogue"),
+    ("reported cost", "custo informado", "costo informado", "gemeldete Kosten", "coût déclaré"),
+    ("no list price", "sem preço de tabela", "sin precio de lista", "kein Listenpreis", "pas de prix catalogue"),
+    ("total", "total", "total", "gesamt", "total"),
+    ("Usage is deduped per <code>requestId</code> (one API response is written as several records, "
+     "each repeating that response's cumulative usage; summing them over-reports output by ~2.3&times; "
+     "on a tool-heavy session). Cost is an estimate at public list rates &mdash; cache reads at "
+     "0.1&times; input, 5-minute cache writes at 1.25&times;, 1-hour writes at 2&times; &mdash; not "
+     "what a subscription bills.",
+     "O uso é deduplicado por <code>requestId</code> (uma resposta da API é gravada como vários "
+     "registros, cada um repetindo o uso acumulado daquela resposta; somá-los superestima a saída em "
+     "~2,3&times; numa sessão com muitas ferramentas). O custo é uma estimativa às tarifas públicas de "
+     "tabela &mdash; leituras de cache a 0,1&times; a entrada, escritas de cache de 5 minutos a "
+     "1,25&times;, escritas de 1 hora a 2&times; &mdash; não o que uma assinatura cobra.",
+     "El uso se deduplica por <code>requestId</code> (una respuesta de la API se escribe como varios "
+     "registros, cada uno repitiendo el uso acumulado de esa respuesta; sumarlos sobreestima la salida "
+     "en ~2,3&times; en una sesión con muchas herramientas). El costo es una estimación a tarifas "
+     "públicas de lista &mdash; lecturas de caché a 0,1&times; la entrada, escrituras de caché de 5 "
+     "minutos a 1,25&times;, escrituras de 1 hora a 2&times; &mdash; no lo que factura una suscripción.",
+     "Die Nutzung ist je <code>requestId</code> dedupliziert (eine API-Antwort wird als mehrere "
+     "Datensätze geschrieben, die jeweils die kumulierte Nutzung dieser Antwort wiederholen; ihre "
+     "Summe überschätzt die Ausgabe in einer werkzeugreichen Sitzung um ~2,3&times;). Die Kosten "
+     "sind eine Schätzung zu öffentlichen Listenpreisen &mdash; Cache-Lesen zu 0,1&times; Eingabe, "
+     "5-Minuten-Cache-Schreiben zu 1,25&times;, 1-Stunden-Schreiben zu 2&times; &mdash; nicht das, "
+     "was ein Abonnement abrechnet.",
+     "L'utilisation est dédupliquée par <code>requestId</code> (une réponse de l'API est écrite en "
+     "plusieurs enregistrements, chacun répétant l'utilisation cumulée de cette réponse ; les "
+     "additionner surestime la sortie de ~2,3&times; sur une session riche en outils). Le coût est "
+     "une estimation aux tarifs catalogue publics &mdash; lectures cache à 0,1&times; l'entrée, "
+     "écritures cache de 5 minutes à 1,25&times;, écritures d'une heure à 2&times; &mdash; et non ce "
+     "qu'un abonnement facture."),
+    (" No list price on file for: {models}.", " Sem preço de tabela registrado para: {models}.",
+     " Sin precio de lista registrado para: {models}.", " Kein Listenpreis hinterlegt für: {models}.",
+     " Aucun prix catalogue enregistré pour : {models}."),
+    ("<b>Reported cost</b> is Claude Code's own meter (<code>cost-state</code> records): ${usd} "
+     "reported by Claude Code over {runs} run(s) of this session",
+     "<b>Custo informado</b> é o medidor do próprio Claude Code (registros <code>cost-state</code>): "
+     "${usd} informados pelo Claude Code em {runs} execução(ões) desta sessão",
+     "<b>Costo informado</b> es el medidor propio de Claude Code (registros <code>cost-state</code>): "
+     "${usd} informados por Claude Code en {runs} ejecución(es) de esta sesión",
+     "<b>Gemeldete Kosten</b> sind Claude Codes eigener Zähler (<code>cost-state</code>-Datensätze): "
+     "${usd} von Claude Code über {runs} Lauf/Läufe dieser Sitzung gemeldet",
+     "<b>Coût déclaré</b> : le compteur propre de Claude Code (enregistrements <code>cost-state</code>) : "
+     "${usd} déclarés par Claude Code sur {runs} exécution(s) de cette session"),
+    ("; {added} lines added, {removed} removed by tools",
+     "; {added} linhas adicionadas, {removed} removidas por ferramentas",
+     "; {added} líneas añadidas, {removed} eliminadas por herramientas",
+     "; {added} Zeilen hinzugefügt, {removed} durch Werkzeuge entfernt",
+     " ; {added} lignes ajoutées, {removed} supprimées par des outils"),
+    (". The meter restarts on every resume and only runs on Claude Code &ge; 2.1.9x write it",
+     ". O medidor reinicia a cada retomada e só execuções no Claude Code &ge; 2.1.9x o gravam",
+     ". El medidor se reinicia en cada reanudación y solo las ejecuciones en Claude Code &ge; 2.1.9x lo escriben",
+     ". Der Zähler startet bei jeder Fortsetzung neu, und nur Läufe unter Claude Code &ge; 2.1.9x schreiben ihn",
+     ". Le compteur redémarre à chaque reprise et seules les exécutions sous Claude Code &ge; 2.1.9x l'écrivent"),
+    (" &mdash; <b>this session began before its first metered run ({first}); spend before that is not "
+     "covered</b>, so the list-price estimate is the figure for the whole session.",
+     " &mdash; <b>esta sessão começou antes da primeira execução medida ({first}); o gasto anterior não "
+     "está coberto</b>, portanto a estimativa a preço de tabela é o valor para a sessão inteira.",
+     " &mdash; <b>esta sesión comenzó antes de su primera ejecución medida ({first}); el gasto anterior "
+     "no está cubierto</b>, así que la estimación a precio de lista es la cifra de toda la sesión.",
+     " &mdash; <b>diese Sitzung begann vor ihrem ersten gemessenen Lauf ({first}); Ausgaben davor sind "
+     "nicht erfasst</b>, daher ist die Listenpreis-Schätzung der Wert für die ganze Sitzung.",
+     " &mdash; <b>cette session a commencé avant sa première exécution mesurée ({first}) ; la dépense "
+     "antérieure n'est pas couverte</b>, l'estimation au prix catalogue est donc le chiffre de toute la session."),
+    (", and here the meter covers the whole session.", ", e aqui o medidor cobre a sessão inteira.",
+     ", y aquí el medidor cubre toda la sesión.", ", und hier erfasst der Zähler die ganze Sitzung.",
+     ", et ici le compteur couvre toute la session."),
+    (" Claude Code flagged a model it could not price; the reported total is a floor.",
+     " O Claude Code sinalizou um modelo que não conseguiu precificar; o total informado é um piso.",
+     " Claude Code señaló un modelo que no pudo tarificar; el total informado es un mínimo.",
+     " Claude Code hat ein Modell gemeldet, das es nicht bepreisen konnte; die gemeldete Summe ist eine Untergrenze.",
+     " Claude Code a signalé un modèle qu'il n'a pas pu tarifer ; le total déclaré est un plancher."),
+    ("Totals include {n} subagent transcript(s).", "Os totais incluem {n} transcrição(ões) de subagente.",
+     "Los totales incluyen {n} transcripción(es) de subagente.", "Die Summen enthalten {n} Subagenten-Transkript(e).",
+     "Les totaux incluent {n} transcription(s) de sous-agent."),
+    ("Reported cost: ${usd} reported by Claude Code's own meter (cost-state records) over {runs} run(s) "
+     "of this session",
+     "Custo informado: ${usd} informados pelo medidor do próprio Claude Code (registros cost-state) em "
+     "{runs} execução(ões) desta sessão",
+     "Costo informado: ${usd} informados por el medidor propio de Claude Code (registros cost-state) en "
+     "{runs} ejecución(es) de esta sesión",
+     "Gemeldete Kosten: ${usd} von Claude Codes eigenem Zähler (cost-state-Datensätze) über {runs} "
+     "Lauf/Läufe dieser Sitzung gemeldet",
+     "Coût déclaré : ${usd} déclarés par le compteur propre de Claude Code (enregistrements cost-state) "
+     "sur {runs} exécution(s) de cette session"),
+    (". This session began before its first metered run ({first}); spend before that is not covered, "
+     "so the list-price figure is the estimate for the whole session.",
+     ". Esta sessão começou antes da primeira execução medida ({first}); o gasto anterior não está "
+     "coberto, portanto o valor a preço de tabela é a estimativa para a sessão inteira.",
+     ". Esta sesión comenzó antes de su primera ejecución medida ({first}); el gasto anterior no está "
+     "cubierto, así que la cifra a precio de lista es la estimación de toda la sesión.",
+     ". Diese Sitzung begann vor ihrem ersten gemessenen Lauf ({first}); Ausgaben davor sind nicht "
+     "erfasst, daher ist der Listenpreis-Wert die Schätzung für die ganze Sitzung.",
+     ". Cette session a commencé avant sa première exécution mesurée ({first}) ; la dépense antérieure "
+     "n'est pas couverte, le chiffre au prix catalogue est donc l'estimation de toute la session."),
+    (". The meter covers the whole session.", ". O medidor cobre a sessão inteira.",
+     ". El medidor cubre toda la sesión.", ". Der Zähler erfasst die ganze Sitzung.",
+     ". Le compteur couvre toute la session."),
+    # -- fidelity report ------------------------------------------------
+    ("records that produced one or more turns below", "registros que produziram um ou mais turnos abaixo",
+     "registros que produjeron uno o más turnos abajo", "Datensätze, die unten einen oder mehrere Beiträge ergaben",
+     "enregistrements ayant produit un ou plusieurs tours ci-dessous"),
+    ("records folded into an earlier turn (tool results)", "registros incorporados a um turno anterior (resultados de ferramenta)",
+     "registros incorporados a un turno anterior (resultados de herramienta)",
+     "Datensätze, die in einen früheren Beitrag eingefaltet wurden (Werkzeugergebnisse)",
+     "enregistrements repliés dans un tour antérieur (résultats d'outil)"),
+    ("records counted only (no transcript content)", "registros apenas contados (sem conteúdo de transcrição)",
+     "registros solo contados (sin contenido de transcripción)", "Datensätze nur gezählt (kein Transkriptinhalt)",
+     "enregistrements seulement comptés (sans contenu de transcription)"),
+    ("total records in the source", "total de registros na fonte", "total de registros en la fuente",
+     "Datensätze in der Quelle insgesamt", "total des enregistrements dans la source"),
+    ("<strong>These do not add up</strong> — a record class is escaping the parser. Treat the transcript "
+     "below as incomplete.",
+     "<strong>As contas não fecham</strong> — uma classe de registro está escapando do parser. Trate a "
+     "transcrição abaixo como incompleta.",
+     "<strong>Las cuentas no cuadran</strong> — una clase de registro se escapa del analizador. Trate la "
+     "transcripción de abajo como incompleta.",
+     "<strong>Das geht nicht auf</strong> — eine Datensatzklasse entgeht dem Parser. Betrachten Sie das "
+     "Transkript unten als unvollständig.",
+     "<strong>Le compte n'y est pas</strong> — une classe d'enregistrement échappe à l'analyseur. Considérez "
+     "la transcription ci-dessous comme incomplète."),
+    ("{n} thinking blocks are present in the source with <em>no text</em>. Claude Code requests thinking "
+     "with <code>display: \"omitted\"</code>, so the reasoning itself never reaches the transcript — this "
+     "archive can show that Claude thought at a given point, never what it thought. Nothing was lost in archiving.",
+     "{n} blocos de raciocínio estão presentes na fonte <em>sem texto</em>. O Claude Code solicita o "
+     "raciocínio com <code>display: \"omitted\"</code>, portanto o raciocínio em si nunca chega à "
+     "transcrição — este arquivo pode mostrar que o Claude pensou num dado momento, nunca o que pensou. "
+     "Nada se perdeu no arquivamento.",
+     "{n} bloques de razonamiento están presentes en la fuente <em>sin texto</em>. Claude Code solicita el "
+     "razonamiento con <code>display: \"omitted\"</code>, así que el razonamiento en sí nunca llega a la "
+     "transcripción — este archivo puede mostrar que Claude pensó en un punto dado, nunca qué pensó. "
+     "Nada se perdió al archivar.",
+     "{n} Denkblöcke sind in der Quelle <em>ohne Text</em> vorhanden. Claude Code fordert das Denken mit "
+     "<code>display: \"omitted\"</code> an, daher erreicht die Überlegung selbst nie das Transkript — "
+     "dieses Archiv kann zeigen, dass Claude an einer Stelle gedacht hat, nie was. Beim Archivieren ging "
+     "nichts verloren.",
+     "{n} blocs de réflexion sont présents dans la source <em>sans texte</em>. Claude Code demande la "
+     "réflexion avec <code>display: \"omitted\"</code>, le raisonnement lui-même n'atteint donc jamais la "
+     "transcription — cette archive peut montrer que Claude a réfléchi à un moment donné, jamais ce qu'il "
+     "a pensé. Rien n'a été perdu à l'archivage."),
+    ("{n} tool call(s) have no result in the source (still running, or interrupted, when this file was written).",
+     "{n} chamada(s) de ferramenta não têm resultado na fonte (ainda em execução, ou interrompidas, quando "
+     "este arquivo foi gravado).",
+     "{n} llamada(s) a herramientas no tienen resultado en la fuente (aún en ejecución, o interrumpidas, "
+     "cuando se escribió este archivo).",
+     "{n} Werkzeugaufruf(e) haben kein Ergebnis in der Quelle (liefen noch oder wurden unterbrochen, als "
+     "diese Datei geschrieben wurde).",
+     "{n} appel(s) d'outil n'ont pas de résultat dans la source (encore en cours, ou interrompus, quand ce "
+     "fichier a été écrit)."),
+    ("{humans} human turns rendered vs {typed} distinct prompts in the session's own <code>last-prompt</code> "
+     "index &mdash; worth a look.",
+     "{humans} turnos humanos renderizados contra {typed} prompts distintos no índice <code>last-prompt</code> "
+     "da própria sessão &mdash; vale conferir.",
+     "{humans} turnos humanos renderizados frente a {typed} prompts distintos en el índice "
+     "<code>last-prompt</code> de la propia sesión &mdash; merece una mirada.",
+     "{humans} menschliche Beiträge dargestellt gegenüber {typed} verschiedenen Prompts im "
+     "<code>last-prompt</code>-Index der Sitzung &mdash; einen Blick wert.",
+     "{humans} tours humains rendus contre {typed} prompts distincts dans l'index <code>last-prompt</code> "
+     "de la session &mdash; mérite un coup d'œil."),
+    ("No record in the source carries a timestamp, so when the conversation happened cannot be established "
+     "from this file.",
+     "Nenhum registro na fonte tem carimbo de tempo, portanto não é possível estabelecer por este arquivo "
+     "quando a conversa aconteceu.",
+     "Ningún registro de la fuente lleva marca de tiempo, así que no se puede establecer a partir de este "
+     "archivo cuándo ocurrió la conversación.",
+     "Kein Datensatz in der Quelle trägt einen Zeitstempel, daher lässt sich aus dieser Datei nicht "
+     "feststellen, wann das Gespräch stattfand.",
+     "Aucun enregistrement de la source ne porte d'horodatage ; ce fichier ne permet donc pas d'établir "
+     "quand la conversation a eu lieu."),
+    ("This archive was written while the session was still active, so records created after {when} are not "
+     "in it. Re-run to refresh.",
+     "Este arquivo foi gravado enquanto a sessão ainda estava ativa, portanto registros criados após {when} "
+     "não estão nele. Execute novamente para atualizar.",
+     "Este archivo se escribió mientras la sesión seguía activa, así que los registros creados después de "
+     "{when} no están en él. Vuelva a ejecutar para actualizar.",
+     "Dieses Archiv wurde geschrieben, während die Sitzung noch aktiv war; Datensätze nach {when} sind "
+     "nicht enthalten. Zum Aktualisieren erneut ausführen.",
+     "Cette archive a été écrite alors que la session était encore active ; les enregistrements créés après "
+     "{when} n'y figurent pas. Relancez pour actualiser."),
+    ("Snapshot taken {when}; the source's last record is {last}. Anything written to the session after that "
+     "is not in this file. Re-run to refresh.",
+     "Instantâneo tirado em {when}; o último registro da fonte é de {last}. O que foi gravado na sessão "
+     "depois disso não está neste arquivo. Execute novamente para atualizar.",
+     "Instantánea tomada el {when}; el último registro de la fuente es de {last}. Lo escrito en la sesión "
+     "después de eso no está en este archivo. Vuelva a ejecutar para actualizar.",
+     "Momentaufnahme vom {when}; der letzte Datensatz der Quelle stammt von {last}. Was danach in die "
+     "Sitzung geschrieben wurde, fehlt in dieser Datei. Zum Aktualisieren erneut ausführen.",
+     "Instantané pris le {when} ; le dernier enregistrement de la source date de {last}. Ce qui a été écrit "
+     "dans la session après cela n'est pas dans ce fichier. Relancez pour actualiser."),
+    ("Every record in the source, and what happened to it. Nothing is dropped silently: a record is either "
+     "rendered below, folded into an earlier turn, or counted here as deliberately not rendered.",
+     "Cada registro da fonte, e o que aconteceu com ele. Nada é descartado em silêncio: um registro ou é "
+     "renderizado abaixo, ou incorporado a um turno anterior, ou contado aqui como deliberadamente não renderizado.",
+     "Cada registro de la fuente, y qué pasó con él. Nada se descarta en silencio: un registro o se "
+     "renderiza abajo, o se incorpora a un turno anterior, o se cuenta aquí como deliberadamente no renderizado.",
+     "Jeder Datensatz der Quelle und was mit ihm geschah. Nichts fällt stillschweigend weg: ein Datensatz "
+     "wird entweder unten dargestellt, in einen früheren Beitrag eingefaltet oder hier als bewusst nicht "
+     "dargestellt gezählt.",
+     "Chaque enregistrement de la source, et ce qu'il est devenu. Rien n'est écarté en silence : un "
+     "enregistrement est soit rendu ci-dessous, soit replié dans un tour antérieur, soit compté ici comme "
+     "délibérément non rendu."),
+    ("Record disposition", "Destino dos registros", "Destino de los registros", "Verbleib der Datensätze",
+     "Sort des enregistrements"),
+    ("Source records by type", "Registros da fonte por tipo", "Registros de la fuente por tipo",
+     "Quelldatensätze nach Typ", "Enregistrements source par type"),
+    ("Content blocks", "Blocos de conteúdo", "Bloques de contenido", "Inhaltsblöcke", "Blocs de contenu"),
+    ("Rendered ({n} turns)", "Renderizados ({n} turnos)", "Renderizados ({n} turnos)",
+     "Dargestellt ({n} Beiträge)", "Rendus ({n} tours)"),
+    ("Counted, not rendered ({n})", "Contados, não renderizados ({n})", "Contados, no renderizados ({n})",
+     "Gezählt, nicht dargestellt ({n})", "Comptés, non rendus ({n})"),
+    ("Human-vs-injected evidence", "Evidência humano-vs-injetado", "Evidencia humano-vs-inyectado",
+     "Belege: Mensch vs. eingefügt", "Preuves humain-vs-injecté"),
+    ("Which signal classified each string-content user record. <code>promptSource</code> and "
+     "<code>origin.kind</code> are authoritative; the rest are fallbacks for older records.",
+     "Qual sinal classificou cada registro de usuário com conteúdo textual. <code>promptSource</code> e "
+     "<code>origin.kind</code> são autoritativos; os demais são alternativas para registros mais antigos.",
+     "Qué señal clasificó cada registro de usuario con contenido de texto. <code>promptSource</code> y "
+     "<code>origin.kind</code> son autoritativos; el resto son alternativas para registros más antiguos.",
+     "Welches Signal jeden Benutzerdatensatz mit Textinhalt eingeordnet hat. <code>promptSource</code> "
+     "und <code>origin.kind</code> sind maßgeblich; der Rest sind Rückfalloptionen für ältere Datensätze.",
+     "Quel signal a classé chaque enregistrement utilisateur à contenu textuel. <code>promptSource</code> "
+     "et <code>origin.kind</code> font foi ; le reste sert de repli pour les enregistrements plus anciens."),
+    ("Caveats", "Ressalvas", "Advertencias", "Vorbehalte", "Réserves"),
+    ("Source: <code>{path}</code> &middot; archiver v{version}", "Fonte: <code>{path}</code> &middot; archiver v{version}",
+     "Fuente: <code>{path}</code> &middot; archiver v{version}", "Quelle: <code>{path}</code> &middot; archiver v{version}",
+     "Source : <code>{path}</code> &middot; archiver v{version}"),
+    ("Rendered in full in the Subagent transcripts section below.",
+     "Renderizadas na íntegra na seção Transcrições de subagentes abaixo.",
+     "Renderizadas completas en la sección Transcripciones de subagentes de abajo.",
+     "Vollständig im Abschnitt Subagenten-Transkripte unten dargestellt.",
+     "Rendues intégralement dans la section Transcriptions des sous-agents ci-dessous."),
+    ("<strong>Not rendered</strong> (--subagents off) — listed here so the omission is on the record. Their "
+     "token usage is still counted above.",
+     "<strong>Não renderizadas</strong> (--subagents off) — listadas aqui para que a omissão fique "
+     "registrada. Seu uso de tokens continua contado acima.",
+     "<strong>No renderizadas</strong> (--subagents off) — listadas aquí para que la omisión quede "
+     "registrada. Su uso de tokens sigue contado arriba.",
+     "<strong>Nicht dargestellt</strong> (--subagents off) — hier aufgeführt, damit die Auslassung "
+     "aktenkundig ist. Ihre Token-Nutzung ist oben weiterhin gezählt.",
+     "<strong>Non rendues</strong> (--subagents off) — listées ici pour que l'omission soit consignée. "
+     "Leur consommation de jetons reste comptée ci-dessus."),
+    ("Subagent transcripts ({n})", "Transcrições de subagentes ({n})", "Transcripciones de subagentes ({n})",
+     "Subagenten-Transkripte ({n})", "Transcriptions des sous-agents ({n})"),
+    ("file", "arquivo", "archivo", "Datei", "fichier"),
+    ("records", "registros", "registros", "Datensätze", "enregistrements"),
+    ("turns", "turnos", "turnos", "Beiträge", "tours"),
+    # -- summaries the CLI writes when none is given ---------------------
+    ("No summary provided. Write one covering Activities, Key findings, What this allows going forward, and "
+     "Generated artifacts, save it as an HTML fragment, and re-run with <code>--summary-file</code>.",
+     "Nenhum resumo fornecido. Escreva um cobrindo Atividades, Principais achados, O que isto permite daqui "
+     "em diante e Artefatos gerados, salve-o como fragmento HTML e execute novamente com "
+     "<code>--summary-file</code>.",
+     "No se proporcionó resumen. Escriba uno que cubra Actividades, Hallazgos clave, Qué permite esto en "
+     "adelante y Artefactos generados, guárdelo como fragmento HTML y vuelva a ejecutar con "
+     "<code>--summary-file</code>.",
+     "Keine Zusammenfassung angegeben. Schreiben Sie eine zu Tätigkeiten, Kernergebnissen, was dies künftig "
+     "ermöglicht und erzeugten Artefakten, speichern Sie sie als HTML-Fragment und führen Sie mit "
+     "<code>--summary-file</code> erneut aus.",
+     "Aucun résumé fourni. Rédigez-en un couvrant Activités, Résultats clés, Ce que cela permet ensuite et "
+     "Artefacts produits, enregistrez-le comme fragment HTML et relancez avec <code>--summary-file</code>."),
+    ("Imported from a claude.ai data export. Pass <code>--summary-file</code> for a hand-written summary.",
+     "Importado de uma exportação de dados do claude.ai. Passe <code>--summary-file</code> para um resumo escrito à mão.",
+     "Importado de una exportación de datos de claude.ai. Pase <code>--summary-file</code> para un resumen escrito a mano.",
+     "Importiert aus einem claude.ai-Datenexport. Mit <code>--summary-file</code> eine handgeschriebene Zusammenfassung angeben.",
+     "Importé d'un export de données claude.ai. Passez <code>--summary-file</code> pour un résumé rédigé à la main."),
+    # -- text / Markdown / LaTeX ----------------------------------------
+    ("Every turn in the HTML archive is present here, with tool input and output in full. Images embedded in "
+     "tool results cannot travel in this format and are marked as omitted; ANSI colour codes are stripped. "
+     "Human turns and tool output are reproduced verbatim and are never re-wrapped.",
+     "Todo turno do arquivo HTML está presente aqui, com a entrada e a saída das ferramentas na íntegra. "
+     "Imagens embutidas em resultados de ferramenta não viajam neste formato e são marcadas como omitidas; "
+     "códigos de cor ANSI são removidos. Turnos humanos e saída de ferramentas são reproduzidos literalmente "
+     "e nunca reformatados.",
+     "Cada turno del archivo HTML está presente aquí, con la entrada y la salida de las herramientas completas. "
+     "Las imágenes incrustadas en resultados de herramienta no viajan en este formato y se marcan como omitidas; "
+     "los códigos de color ANSI se eliminan. Los turnos humanos y la salida de herramientas se reproducen "
+     "textualmente y nunca se reajustan.",
+     "Jeder Beitrag des HTML-Archivs ist hier vorhanden, mit vollständiger Werkzeug-Ein- und -Ausgabe. In "
+     "Werkzeugergebnisse eingebettete Bilder können in diesem Format nicht mitreisen und sind als ausgelassen "
+     "markiert; ANSI-Farbcodes sind entfernt. Menschliche Beiträge und Werkzeugausgabe sind wörtlich "
+     "wiedergegeben und werden nie neu umbrochen.",
+     "Chaque tour de l'archive HTML est présent ici, avec l'entrée et la sortie des outils en entier. Les "
+     "images incluses dans les résultats d'outil ne peuvent pas voyager dans ce format et sont marquées "
+     "comme omises ; les codes couleur ANSI sont retirés. Les tours humains et la sortie des outils sont "
+     "reproduits mot pour mot et jamais réagencés."),
+    ("Every turn in the HTML archive is present here, but tool calls are reduced to a single labelled line: "
+     "their input and output are omitted, because a page-based format renders them as unreadable walls of "
+     "escaped JSON. The HTML archive holds all of it. Human turns and Claude's prose are complete and "
+     "reproduced verbatim.",
+     "Todo turno do arquivo HTML está presente aqui, mas as chamadas de ferramenta são reduzidas a uma única "
+     "linha rotulada: sua entrada e saída são omitidas, porque um formato paginado as renderiza como muros "
+     "ilegíveis de JSON escapado. O arquivo HTML contém tudo. Turnos humanos e a prosa do Claude estão "
+     "completos e reproduzidos literalmente.",
+     "Cada turno del archivo HTML está presente aquí, pero las llamadas a herramientas se reducen a una sola "
+     "línea etiquetada: su entrada y salida se omiten, porque un formato paginado las renderiza como muros "
+     "ilegibles de JSON escapado. El archivo HTML lo contiene todo. Los turnos humanos y la prosa de Claude "
+     "están completos y reproducidos textualmente.",
+     "Jeder Beitrag des HTML-Archivs ist hier vorhanden, doch Werkzeugaufrufe sind auf eine einzige "
+     "beschriftete Zeile reduziert: Ein- und Ausgabe fehlen, weil ein seitenbasiertes Format sie als "
+     "unlesbare Wände aus escaptem JSON setzt. Das HTML-Archiv enthält alles. Menschliche Beiträge und "
+     "Claudes Prosa sind vollständig und wörtlich wiedergegeben.",
+     "Chaque tour de l'archive HTML est présent ici, mais les appels d'outils sont réduits à une seule ligne "
+     "étiquetée : leur entrée et leur sortie sont omises, car un format paginé les rend comme des murs "
+     "illisibles de JSON échappé. L'archive HTML contient tout. Les tours humains et la prose de Claude sont "
+     "complets et reproduits mot pour mot."),
+    (" {n} tool calls are shown by name only.", " {n} chamadas de ferramenta aparecem apenas pelo nome.",
+     " {n} llamadas a herramientas se muestran solo por su nombre.", " {n} Werkzeugaufrufe sind nur mit Namen aufgeführt.",
+     " {n} appels d'outils ne sont indiqués que par leur nom."),
+    ("HUMAN", "HUMANO", "HUMANO", "MENSCH", "HUMAIN"),
+    ("THINKING", "RACIOCÍNIO", "RAZONAMIENTO", "DENKEN", "RÉFLEXION"),
+    ("TOOL", "FERRAMENTA", "HERRAMIENTA", "WERKZEUG", "OUTIL"),
+    ("[ERROR]", "[ERRO]", "[ERROR]", "[FEHLER]", "[ERREUR]"),
+    ("HUMAN - PASTED IMAGE", "HUMANO - IMAGEM COLADA", "HUMANO - IMAGEN PEGADA",
+     "MENSCH - EINGEFÜGTES BILD", "HUMAIN - IMAGE COLLÉE"),
+    ("(no text: display=omitted)", "(sem texto: display=omitted)", "(sin texto: display=omitted)",
+     "(kein Text: display=omitted)", "(pas de texte : display=omitted)"),
+    ("(image omitted in this format; the HTML archive holds it)",
+     "(imagem omitida neste formato; o arquivo HTML a contém)",
+     "(imagen omitida en este formato; el archivo HTML la contiene)",
+     "(Bild in diesem Format ausgelassen; das HTML-Archiv enthält es)",
+     "(image omise dans ce format ; l'archive HTML la contient)"),
+    ("(image omitted in this format)", "(imagem omitida neste formato)", "(imagen omitida en este formato)",
+     "(Bild in diesem Format ausgelassen)", "(image omise dans ce format)"),
+    ("[image omitted]", "[imagem omitida]", "[imagen omitida]", "[Bild ausgelassen]", "[image omise]"),
+    ("(no result in the source)", "(sem resultado na fonte)", "(sin resultado en la fuente)",
+     "(kein Ergebnis in der Quelle)", "(aucun résultat dans la source)"),
+    ("input:", "entrada:", "entrada:", "Eingabe:", "entrée :"),
+    ("output:", "saída:", "salida:", "Ausgabe:", "sortie :"),
+    ("session", "sessão", "sesión", "Sitzung", "session"),
+    ("SESSION SUMMARY", "RESUMO DA SESSÃO", "RESUMEN DE LA SESIÓN", "SITZUNGSZUSAMMENFASSUNG", "RÉSUMÉ DE LA SESSION"),
+    ("FIDELITY REPORT", "RELATÓRIO DE FIDELIDADE", "INFORME DE FIDELIDAD", "BERICHT ZUR WIEDERGABETREUE",
+     "RAPPORT DE FIDÉLITÉ"),
+    ("subagent transcript agent-{aid}", "transcrição de subagente agent-{aid}", "transcripción de subagente agent-{aid}",
+     "Subagenten-Transkript agent-{aid}", "transcription de sous-agent agent-{aid}"),
+    (" (not rendered)", " (não renderizada)", " (no renderizada)", " (nicht dargestellt)", " (non rendue)"),
+    ("SUBAGENT TRANSCRIPT A{k}: agent-{aid}  ({records} records; turns tagged A{k}.P / A{k}.R)",
+     "TRANSCRIÇÃO DE SUBAGENTE A{k}: agent-{aid}  ({records} registros; turnos marcados A{k}.P / A{k}.R)",
+     "TRANSCRIPCIÓN DE SUBAGENTE A{k}: agent-{aid}  ({records} registros; turnos etiquetados A{k}.P / A{k}.R)",
+     "SUBAGENTEN-TRANSKRIPT A{k}: agent-{aid}  ({records} Datensätze; Beiträge markiert A{k}.P / A{k}.R)",
+     "TRANSCRIPTION DE SOUS-AGENT A{k} : agent-{aid}  ({records} enregistrements ; tours étiquetés A{k}.P / A{k}.R)"),
+    ("Session: `{sid}`", "Sessão: `{sid}`", "Sesión: `{sid}`", "Sitzung: `{sid}`", "Session : `{sid}`"),
+    ("Human turns and tool I/O are fenced verbatim below; Claude's own prose is markdown and is left live, "
+     "so its headings appear in this document's outline.",
+     "Turnos humanos e E/S de ferramentas estão cercados literalmente abaixo; a prosa do próprio Claude é "
+     "markdown e fica ativa, de modo que seus títulos aparecem na estrutura deste documento.",
+     "Los turnos humanos y la E/S de herramientas van cercados textualmente abajo; la prosa propia de "
+     "Claude es markdown y se deja activa, así que sus encabezados aparecen en el esquema de este documento.",
+     "Menschliche Beiträge und Werkzeug-E/A sind unten wörtlich eingezäunt; Claudes eigene Prosa ist "
+     "Markdown und bleibt aktiv, sodass ihre Überschriften in der Gliederung dieses Dokuments erscheinen.",
+     "Les tours humains et les E/S des outils sont clôturés mot pour mot ci-dessous ; la prose de Claude "
+     "est du markdown laissé actif, ses titres apparaissent donc dans le plan de ce document."),
+    ("Human — pasted image", "Humano — imagem colada", "Humano — imagen pegada", "Mensch — eingefügtes Bild",
+     "Humain — image collée"),
+    ("Tool", "Ferramenta", "Herramienta", "Werkzeug", "Outil"),
+    ("Subagent transcript A{k}: agent-{aid}", "Transcrição de subagente A{k}: agent-{aid}",
+     "Transcripción de subagente A{k}: agent-{aid}", "Subagenten-Transkript A{k}: agent-{aid}",
+     "Transcription de sous-agent A{k} : agent-{aid}"),
+    ("({records} records; a background agent's own conversation)",
+     "({records} registros; a conversa própria de um agente em segundo plano)",
+     "({records} registros; la conversación propia de un agente en segundo plano)",
+     "({records} Datensätze; das eigene Gespräch eines Hintergrundagenten)",
+     "({records} enregistrements ; la conversation propre d'un agent d'arrière-plan)"),
+    ("Transcript", "Transcrição", "Transcripción", "Transkript", "Transcription"),
+    (" (part {k}/{n})", " (parte {k}/{n})", " (parte {k}/{n})", " (Teil {k}/{n})", " (partie {k}/{n})"),
+    ("Subagent A{k}: agent-{aid}", "Subagente A{k}: agent-{aid}", "Subagente A{k}: agent-{aid}",
+     "Subagent A{k}: agent-{aid}", "Sous-agent A{k} : agent-{aid}"),
+    ("({records} records; a background agent's own conversation, archived from its transcript file beside the session)",
+     "({records} registros; a conversa própria de um agente em segundo plano, arquivada a partir de seu arquivo de transcrição ao lado da sessão)",
+     "({records} registros; la conversación propia de un agente en segundo plano, archivada desde su archivo de transcripción junto a la sesión)",
+     "({records} Datensätze; das eigene Gespräch eines Hintergrundagenten, archiviert aus seiner Transkriptdatei neben der Sitzung)",
+     "({records} enregistrements ; la conversation propre d'un agent d'arrière-plan, archivée depuis son fichier de transcription à côté de la session)"),
+    ("Subagent transcripts (not rendered)", "Transcrições de subagentes (não renderizadas)",
+     "Transcripciones de subagentes (no renderizadas)", "Subagenten-Transkripte (nicht dargestellt)",
+     "Transcriptions des sous-agents (non rendues)"),
+    ("{n} subagent transcript file(s) exist for this session but were not rendered (--subagents off): {files}. "
+     "Their token usage is included in the usage table.",
+     "{n} arquivo(s) de transcrição de subagente existem para esta sessão mas não foram renderizados "
+     "(--subagents off): {files}. Seu uso de tokens está incluído na tabela de uso.",
+     "{n} archivo(s) de transcripción de subagente existen para esta sesión pero no se renderizaron "
+     "(--subagents off): {files}. Su uso de tokens está incluido en la tabla de uso.",
+     "{n} Subagenten-Transkriptdatei(en) existieren für diese Sitzung, wurden aber nicht dargestellt "
+     "(--subagents off): {files}. Ihre Token-Nutzung ist in der Nutzungstabelle enthalten.",
+     "{n} fichier(s) de transcription de sous-agent existent pour cette session mais n'ont pas été rendus "
+     "(--subagents off) : {files}. Leur consommation de jetons est incluse dans le tableau d'utilisation."),
+    ("{n} characters (emoji and other glyphs no installed TeX font can set)",
+     "{n} caracteres (emoji e outros glifos que nenhuma fonte TeX instalada consegue compor)",
+     "{n} caracteres (emoji y otros glifos que ninguna fuente TeX instalada puede componer)",
+     "{n} Zeichen (Emoji und andere Glyphen, die keine installierte TeX-Schrift setzen kann)",
+     "{n} caractères (émoji et autres glyphes qu'aucune police TeX installée ne peut composer)"),
+    ("{n} control bytes (NUL, backspace and similar, which TeX refuses to read)",
+     "{n} bytes de controle (NUL, backspace e similares, que o TeX se recusa a ler)",
+     "{n} bytes de control (NUL, retroceso y similares, que TeX se niega a leer)",
+     "{n} Steuerbytes (NUL, Backspace und Ähnliches, die TeX nicht liest)",
+     "{n} octets de contrôle (NUL, retour arrière et similaires, que TeX refuse de lire)"),
+    ("This rendering removed {what}.", "Esta renderização removeu {what}.", "Esta renderización eliminó {what}.",
+     "Diese Darstellung hat {what} entfernt.", "Ce rendu a retiré {what}."),
+    (" and ", " e ", " y ", " und ", " et "),
+    ("This fragment is engine-neutral, so it compiles under pdflatex as well as XeLaTeX: {n} characters were "
+     "transliterated (Greek to math or its name, arrows and box drawing to ASCII).",
+     "Este fragmento é neutro quanto ao motor, portanto compila tanto com pdflatex quanto com XeLaTeX: {n} "
+     "caracteres foram transliterados (grego para matemática ou seu nome, setas e caracteres de caixa para ASCII).",
+     "Este fragmento es neutral respecto al motor, así que compila tanto con pdflatex como con XeLaTeX: {n} "
+     "caracteres fueron transliterados (griego a matemáticas o su nombre, flechas y dibujo de cajas a ASCII).",
+     "Dieses Fragment ist engine-neutral und kompiliert daher mit pdflatex wie mit XeLaTeX: {n} Zeichen "
+     "wurden transliteriert (Griechisch zu Mathematik oder seinem Namen, Pfeile und Rahmenzeichen zu ASCII).",
+     "Ce fragment est neutre quant au moteur et compile donc sous pdflatex comme sous XeLaTeX : {n} "
+     "caractères ont été translittérés (grec en mathématiques ou en son nom, flèches et tracés de boîtes en ASCII)."),
+    ("{n} very long lines were hard-wrapped at {w} characters so TeX could typeset them.",
+     "{n} linhas muito longas foram quebradas forçadamente em {w} caracteres para que o TeX pudesse compô-las.",
+     "{n} líneas muy largas se cortaron forzosamente a {w} caracteres para que TeX pudiera componerlas.",
+     "{n} sehr lange Zeilen wurden bei {w} Zeichen hart umbrochen, damit TeX sie setzen konnte.",
+     "{n} lignes très longues ont été coupées de force à {w} caractères pour que TeX puisse les composer."),
+    ("{n} very large turn(s) were split into consecutive boxes of at most {m} lines each, titled (part k/n), "
+     "so TeX could hold them in memory; nothing was omitted.",
+     "{n} turno(s) muito grande(s) foram divididos em caixas consecutivas de no máximo {m} linhas cada, "
+     "intituladas (parte k/n), para que o TeX pudesse mantê-los em memória; nada foi omitido.",
+     "{n} turno(s) muy grande(s) se dividieron en cajas consecutivas de como máximo {m} líneas cada una, "
+     "tituladas (parte k/n), para que TeX pudiera mantenerlos en memoria; nada se omitió.",
+     "{n} sehr große Beiträge wurden in aufeinanderfolgende Kästen von höchstens {m} Zeilen aufgeteilt, "
+     "betitelt (Teil k/n), damit TeX sie im Speicher halten konnte; nichts wurde ausgelassen.",
+     "{n} tour(s) très volumineux ont été découpés en boîtes consécutives d'au plus {m} lignes chacune, "
+     "intitulées (partie k/n), pour que TeX puisse les garder en mémoire ; rien n'a été omis."),
+    ("The HTML archive holds all of it unaltered.", "O arquivo HTML contém tudo inalterado.",
+     "El archivo HTML lo contiene todo sin alterar.", "Das HTML-Archiv enthält alles unverändert.",
+     "L'archive HTML contient tout, inchangé."),
+    # -- index ----------------------------------------------------------
+    ("Claude Code session archive", "Arquivo de sessões do Claude Code", "Archivo de sesiones de Claude Code",
+     "Claude-Code-Sitzungsarchiv", "Archive des sessions Claude Code"),
+    ("Generated {when}. &ldquo;Covered&rdquo; means the session was resumed into another transcript that "
+     "<em>is</em> archived, so its records live in that file.",
+     "Gerado em {when}. &ldquo;Coberta&rdquo; significa que a sessão foi retomada em outra transcrição que "
+     "<em>está</em> arquivada, portanto seus registros vivem naquele arquivo.",
+     "Generado el {when}. &ldquo;Cubierta&rdquo; significa que la sesión se reanudó en otra transcripción "
+     "que <em>sí</em> está archivada, así que sus registros viven en ese archivo.",
+     "Erzeugt am {when}. &ldquo;Abgedeckt&rdquo; heißt, die Sitzung wurde in ein anderes Transkript "
+     "fortgesetzt, das archiviert <em>ist</em>; ihre Datensätze liegen in jener Datei.",
+     "Généré le {when}. &ldquo;Couverte&rdquo; signifie que la session a été reprise dans une autre "
+     "transcription qui, elle, <em>est</em> archivée ; ses enregistrements vivent dans ce fichier."),
+    ("Search every prompt across all archives ({n} prompts)", "Buscar em todos os prompts de todos os arquivos ({n} prompts)",
+     "Buscar en todos los prompts de todos los archivos ({n} prompts)", "Alle Prompts aller Archive durchsuchen ({n} Prompts)",
+     "Rechercher dans tous les prompts de toutes les archives ({n} prompts)"),
+    ("Search prompts across all archives", "Buscar prompts em todos os arquivos", "Buscar prompts en todos los archivos",
+     "Prompts in allen Archiven suchen", "Rechercher des prompts dans toutes les archives"),
+    ("status", "status", "estado", "Status", "état"),
+    ("activity", "atividade", "actividad", "Aktivität", "activité"),
+    ("id", "id", "id", "ID", "id"),
+    ("started", "início", "inicio", "Beginn", "début"),
+    ("last record", "último registro", "último registro", "letzter Datensatz", "dernier enregistrement"),
+    ("legacy v1", "legado v1", "heredado v1", "Altformat v1", "ancien v1"),
+    ("stale", "desatualizada", "desactualizada", "veraltet", "périmée"),
+    ("archived", "arquivada", "archivada", "archiviert", "archivée"),
+    ("covered", "coberta", "cubierta", "abgedeckt", "couverte"),
+    ("not archived", "não arquivada", "no archivada", "nicht archiviert", "non archivée"),
+    ("written by the v1 archiver &mdash; no embedded metadata, and its counts and token figures are known to be "
+     "wrong. Re-run to replace it.",
+     "gravada pelo archiver v1 &mdash; sem metadados embutidos, e suas contagens e números de tokens são "
+     "sabidamente errados. Execute novamente para substituí-la.",
+     "escrita por el archiver v1 &mdash; sin metadatos incrustados, y sus recuentos y cifras de tokens son "
+     "erróneos. Vuelva a ejecutar para reemplazarla.",
+     "vom Archiver v1 geschrieben &mdash; ohne eingebettete Metadaten, und seine Zählungen und Token-Zahlen "
+     "sind bekanntermaßen falsch. Zum Ersetzen erneut ausführen.",
+     "écrite par l'archiver v1 &mdash; sans métadonnées intégrées, et ses décomptes et chiffres de jetons "
+     "sont connus pour être faux. Relancez pour la remplacer."),
+    ("${usd} reported", "${usd} informados", "${usd} informados", "${usd} gemeldet", "${usd} déclarés"),
+    ("{records} records &middot; {tools} tool calls &middot; {cost} &middot; {mb} MB &middot; archiver v{version}",
+     "{records} registros &middot; {tools} chamadas de ferramenta &middot; {cost} &middot; {mb} MB &middot; archiver v{version}",
+     "{records} registros &middot; {tools} llamadas a herramientas &middot; {cost} &middot; {mb} MB &middot; archiver v{version}",
+     "{records} Datensätze &middot; {tools} Werkzeugaufrufe &middot; {cost} &middot; {mb} MB &middot; archiver v{version}",
+     "{records} enregistrements &middot; {tools} appels d'outils &middot; {cost} &middot; {mb} Mo &middot; archiver v{version}"),
+    ("continued into <code>{sid}</code>, archived there", "continuada em <code>{sid}</code>, arquivada lá",
+     "continuada en <code>{sid}</code>, archivada allí", "fortgesetzt in <code>{sid}</code>, dort archiviert",
+     "poursuivie dans <code>{sid}</code>, archivée là"),
+    (" &middot; {n} record(s) not carried over (bookkeeping only)", " &middot; {n} registro(s) não transportado(s) (apenas contabilidade)",
+     " &middot; {n} registro(s) no trasladado(s) (solo contabilidad)", " &middot; {n} Datensatz/-sätze nicht übernommen (nur Buchführung)",
+     " &middot; {n} enregistrement(s) non reporté(s) (comptabilité seulement)"),
+    ("{n} records on disk", "{n} registros em disco", "{n} registros en disco", "{n} Datensätze auf der Festplatte",
+     "{n} enregistrements sur disque"),
+    (" &middot; {n} subagent transcript(s)", " &middot; {n} transcrição(ões) de subagente", " &middot; {n} transcripción(es) de subagente",
+     " &middot; {n} Subagenten-Transkript(e)", " &middot; {n} transcription(s) de sous-agent"),
+    (" &middot; source: {source}", " &middot; fonte: {source}", " &middot; fuente: {source}", " &middot; Quelle: {source}",
+     " &middot; source : {source}"),
+    ("source transcript not on disk", "transcrição de origem não está em disco", "transcripción de origen no está en disco",
+     "Quelltranskript nicht auf der Festplatte", "transcription source absente du disque"),
+    ("{records} records &middot; {mb} MB &middot; archiver v{version} &middot; source: {source}",
+     "{records} registros &middot; {mb} MB &middot; archiver v{version} &middot; fonte: {source}",
+     "{records} registros &middot; {mb} MB &middot; archiver v{version} &middot; fuente: {source}",
+     "{records} Datensätze &middot; {mb} MB &middot; archiver v{version} &middot; Quelle: {source}",
+     "{records} enregistrements &middot; {mb} Mo &middot; archiver v{version} &middot; source : {source}"),
+    ("{n} sessions on disk &middot; {archived} archived &middot; {missing} not archived directly",
+     "{n} sessões em disco &middot; {archived} arquivadas &middot; {missing} não arquivadas diretamente",
+     "{n} sesiones en disco &middot; {archived} archivadas &middot; {missing} no archivadas directamente",
+     "{n} Sitzungen auf der Festplatte &middot; {archived} archiviert &middot; {missing} nicht direkt archiviert",
+     "{n} sessions sur disque &middot; {archived} archivées &middot; {missing} non archivées directement"),
+    (" &middot; {n} archived from imports or deleted sources", " &middot; {n} arquivadas de importações ou fontes excluídas",
+     " &middot; {n} archivadas desde importaciones o fuentes eliminadas", " &middot; {n} aus Importen oder gelöschten Quellen archiviert",
+     " &middot; {n} archivées depuis des imports ou des sources supprimées"),
+    ("now", "agora", "ahora", "jetzt", "maintenant"),
+    ("{total} matching prompt(s) in {sessions} session(s)", "{total} prompt(s) correspondente(s) em {sessions} sessão(ões)",
+     "{total} prompt(s) coincidente(s) en {sessions} sesión(es)", "{total} passende(r) Prompt(s) in {sessions} Sitzung(en)",
+     "{total} prompt(s) correspondant(s) dans {sessions} session(s)"),
+    (" (first 200 shown)", " (primeiros 200 exibidos)", " (se muestran los primeros 200)", " (erste 200 angezeigt)",
+     " (200 premiers affichés)"),
+]
+
+L10N = {lang: {row[0]: row[i] for row in _L10N_ROWS}
+        for i, lang in enumerate(LANGS) if lang != "en"}
 
 # Where archives go unless --archive-dir says otherwise. CLAUDE_ARCHIVE_DIR in
 # the environment overrides the built-in default so a personal location never
@@ -1402,18 +2206,19 @@ def reported_cost_note(rc: dict | None) -> str:
     facts the HTML usage note states, so no format is silent about coverage."""
     if not rc:
         return ""
-    s = (f"Reported cost: ${rc['usd']:,.2f} reported by Claude Code's own meter "
-         f"(cost-state records) over {rc['runs']} run(s) of this session")
+    s = _("Reported cost: ${usd} reported by Claude Code's own meter (cost-state records) "
+          "over {runs} run(s) of this session").format(usd=f"{rc['usd']:,.2f}", runs=rc["runs"])
     if rc["lines_added"] or rc["lines_removed"]:
-        s += f"; {rc['lines_added']:,} lines added, {rc['lines_removed']:,} removed by tools"
+        s += _("; {added} lines added, {removed} removed by tools").format(
+            added=f"{rc['lines_added']:,}", removed=f"{rc['lines_removed']:,}")
     if rc["partial"]:
-        s += (f". This session began before its first metered run "
-              f"({fmt_local(rc['first_start'])}); spend before that is not covered, "
-              "so the list-price figure is the estimate for the whole session.")
+        s += _(". This session began before its first metered run ({first}); spend before "
+               "that is not covered, so the list-price figure is the estimate for the whole "
+               "session.").format(first=fmt_local(rc["first_start"]))
     else:
-        s += ". The meter covers the whole session."
+        s += _(". The meter covers the whole session.")
     if rc["unknown_model_cost"]:
-        s += " Claude Code flagged a model it could not price; the reported total is a floor."
+        s += _(" Claude Code flagged a model it could not price; the reported total is a floor.")
     return s
 
 
@@ -1438,7 +2243,7 @@ def usage_table(t: Transcript, on: datetime.date,
             cost_cell = f"${cost:,.2f}"
         else:
             unpriced.append(model)
-            cost_cell = "<span class=\"muted\">no list price</span>"
+            cost_cell = f'<span class="muted">{_("no list price")}</span>'
         rep_cell = ""
         if rc:
             rv = rc["by_model"].get(model)
@@ -1460,9 +2265,10 @@ def usage_table(t: Transcript, on: datetime.date,
                         + '<td class=num><span class="muted">&mdash;</span></td>'
                         + f'<td class=num>${rc["by_model"][model]:,.2f}</td></tr>')
     foot = (
-        "<tr class=total><td>total</td><td class=num>{req}</td><td class=num>{inp}</td>"
+        "<tr class=total><td>{total}</td><td class=num>{req}</td><td class=num>{inp}</td>"
         "<td class=num>{out}</td><td class=num>{cr}</td><td class=num>{cw}</td>"
         "<td class=num>${cost:,.2f}</td>{rep}</tr>".format(
+            total=_("total"),
             req=tokens(totals["requests"]), inp=tokens(totals["input"]),
             out=tokens(totals["output"]), cr=tokens(totals["cache_read"]),
             cw=tokens(totals["cache_write_5m"] + totals["cache_write_1h"]),
@@ -1470,32 +2276,37 @@ def usage_table(t: Transcript, on: datetime.date,
             rep=(f'<td class=num>${rc["usd"]:,.2f}</td>' if rc else "")))
     table = (
         '<div class="table-wrap"><table class="usage"><thead><tr>'
-        "<th>model</th><th>requests</th><th>input</th><th>output</th>"
-        "<th>cache read</th><th>cache write</th><th>list cost</th>"
-        + ("<th>reported cost</th>" if rc else "")
+        + f"<th>{_('model')}</th><th>{_('requests')}</th><th>{_('input')}</th>"
+        + f"<th>{_('output')}</th><th>{_('cache read')}</th><th>{_('cache write')}</th>"
+        + f"<th>{_('list cost')}</th>"
+        + (f"<th>{_('reported cost')}</th>" if rc else "")
         + "</tr></thead><tbody>" + "".join(rows) + foot + "</tbody></table></div>")
     note = (
-        "<p class=\"muted small\">Usage is deduped per <code>requestId</code> (one API response is "
-        "written as several records, each repeating that response's cumulative usage; summing them "
-        "over-reports output by ~2.3&times; on a tool-heavy session). Cost is an estimate at public "
-        "list rates &mdash; cache reads at 0.1&times; input, 5-minute cache writes at 1.25&times;, "
-        "1-hour writes at 2&times; &mdash; not what a subscription bills."
-        + (f" No list price on file for: {esc(', '.join(sorted(set(unpriced))))}." if unpriced else "")
+        '<p class="muted small">'
+        + _("Usage is deduped per <code>requestId</code> (one API response is written as several "
+            "records, each repeating that response's cumulative usage; summing them over-reports "
+            "output by ~2.3&times; on a tool-heavy session). Cost is an estimate at public list "
+            "rates &mdash; cache reads at 0.1&times; input, 5-minute cache writes at 1.25&times;, "
+            "1-hour writes at 2&times; &mdash; not what a subscription bills.")
+        + (_(" No list price on file for: {models}.").format(
+            models=esc(", ".join(sorted(set(unpriced))))) if unpriced else "")
         + "</p>")
     if rc:
         note += (
-            '<p class="muted small"><b>Reported cost</b> is Claude Code\'s own meter '
-            f'(<code>cost-state</code> records): ${rc["usd"]:,.2f} reported by Claude Code over '
-            f'{rc["runs"]} run(s) of this session'
-            + (f'; {rc["lines_added"]:,} lines added, {rc["lines_removed"]:,} removed by tools'
+            '<p class="muted small">'
+            + _("<b>Reported cost</b> is Claude Code's own meter (<code>cost-state</code> records): "
+                "${usd} reported by Claude Code over {runs} run(s) of this session").format(
+                    usd=f'{rc["usd"]:,.2f}', runs=rc["runs"])
+            + (_("; {added} lines added, {removed} removed by tools").format(
+                added=f'{rc["lines_added"]:,}', removed=f'{rc["lines_removed"]:,}')
                if rc["lines_added"] or rc["lines_removed"] else "")
-            + '. The meter restarts on every resume and only runs on Claude Code &ge; 2.1.9x write it'
-            + (f' &mdash; <b>this session began before its first metered run '
-               f'({fmt_local(rc["first_start"])}); spend before that is not covered</b>, so the '
-               'list-price estimate is the figure for the whole session.'
+            + _(". The meter restarts on every resume and only runs on Claude Code &ge; 2.1.9x write it")
+            + (_(" &mdash; <b>this session began before its first metered run ({first}); spend "
+                 "before that is not covered</b>, so the list-price estimate is the figure for the "
+                 "whole session.").format(first=fmt_local(rc["first_start"]))
                if rc["partial"] else
-               ', and here the meter covers the whole session.')
-            + (' Claude Code flagged a model it could not price; the reported total is a floor.'
+               _(", and here the meter covers the whole session."))
+            + (_(" Claude Code flagged a model it could not price; the reported total is a floor.")
                if rc["unknown_model_cost"] else "")
             + '</p>')
     # A session with no assistant response at all (opened, never answered) leaves
@@ -1520,80 +2331,98 @@ def fidelity_section(t: Transcript, path: Path, archived_at: datetime.datetime,
     total_records = sum(t.record_types.values())
     disp = t.disposition
     reconciles = (disp["rendered"] + disp["folded"] + disp["counted"]) == total_records
+    fl = fidelity_lines(t)
     disposition_html = (
         '<div class="table-wrap"><table class="mini"><tbody>'
-        f'<tr><td>records that produced one or more turns below</td><td class=num>{disp["rendered"]:,}</td></tr>'
-        f'<tr><td>records folded into an earlier turn (tool results)</td><td class=num>{disp["folded"]:,}</td></tr>'
-        f'<tr><td>records counted only (no transcript content)</td><td class=num>{disp["counted"]:,}</td></tr>'
-        f'<tr class="total"><td>total records in the source</td><td class=num>{total_records:,}</td></tr>'
+        + "".join(f'<tr><td>{label}</td><td class=num>{n:,}</td></tr>' for label, n in fl[:3])
+        + f'<tr class="total"><td>{fl[3][0]}</td><td class=num>{total_records:,}</td></tr>'
         "</tbody></table></div>"
         + ("" if reconciles else
-           '<p class="callout"><strong>These do not add up</strong> — a record class is escaping '
-           'the parser. Treat the transcript below as incomplete.</p>'))
+           '<p class="callout">'
+           + _("<strong>These do not add up</strong> — a record class is escaping the parser. "
+               "Treat the transcript below as incomplete.") + '</p>'))
 
     warn = []
     if t.empty_thinking:
-        warn.append(
-            f"{t.empty_thinking:,} thinking blocks are present in the source with <em>no text</em>. "
-            "Claude Code requests thinking with <code>display: \"omitted\"</code>, so the reasoning "
-            "itself never reaches the transcript — this archive can show that Claude thought at a "
-            "given point, never what it thought. Nothing was lost in archiving.")
+        warn.append(_(
+            "{n} thinking blocks are present in the source with <em>no text</em>. Claude Code "
+            "requests thinking with <code>display: \"omitted\"</code>, so the reasoning itself "
+            "never reaches the transcript — this archive can show that Claude thought at a given "
+            "point, never what it thought. Nothing was lost in archiving.").format(
+                n=f"{t.empty_thinking:,}"))
     if t.unresolved_tools:
-        warn.append(f"{t.unresolved_tools} tool call(s) have no result in the source "
-                    "(still running, or interrupted, when this file was written).")
+        warn.append(_("{n} tool call(s) have no result in the source (still running, or "
+                      "interrupted, when this file was written).").format(n=t.unresolved_tools))
     typed = len({" ".join(p.split()) for p in t.typed_prompts})
     humans = t.rendered_types.get("human turn", 0)
     if typed and abs(typed - humans) > 2:
-        warn.append(f"{humans} human turns rendered vs {typed} distinct prompts in the "
-                    "session's own <code>last-prompt</code> index &mdash; worth a look.")
+        warn.append(_("{humans} human turns rendered vs {typed} distinct prompts in the session's "
+                      "own <code>last-prompt</code> index &mdash; worth a look.").format(
+                          humans=humans, typed=typed))
     # Only claim self-archiving when the source is still being written; archiving a
     # finished session from a different session is the common case.
     ends = sorted(parse_ts(x) for x in t.timestamps)
     last_record = ends[-1] if ends else None
     live = bool(last_record) and (archived_at - last_record).total_seconds() < 600
     if last_record is None:
-        warn.append("No record in the source carries a timestamp, so when the conversation "
-                    "happened cannot be established from this file.")
+        warn.append(_("No record in the source carries a timestamp, so when the conversation "
+                      "happened cannot be established from this file."))
     elif live:
-        warn.append("This archive was written while the session was still active, so records "
-                    f"created after {esc(fmt_local(archived_at))} are not in it. Re-run to refresh.")
+        warn.append(_("This archive was written while the session was still active, so records "
+                      "created after {when} are not in it. Re-run to refresh.").format(
+                          when=esc(fmt_local(archived_at))))
     else:
-        warn.append(f"Snapshot taken {esc(fmt_local(archived_at))}; the source's last record is "
-                    f"{esc(fmt_local(last_record))}. Anything written to the session after that "
-                    "is not in this file. Re-run to refresh.")
+        warn.append(_("Snapshot taken {when}; the source's last record is {last}. Anything "
+                      "written to the session after that is not in this file. Re-run to "
+                      "refresh.").format(when=esc(fmt_local(archived_at)),
+                                         last=esc(fmt_local(last_record))))
 
+    L = {
+        "title": _("Fidelity report"),
+        "lead": _("Every record in the source, and what happened to it. Nothing is dropped "
+                  "silently: a record is either rendered below, folded into an earlier turn, or "
+                  "counted here as deliberately not rendered."),
+        "disposition": _("Record disposition"),
+        "by_type": _("Source records by type"),
+        "blocks": _("Content blocks"),
+        "rendered": _("Rendered ({n} turns)").format(n=f"{rendered:,}"),
+        "counted": _("Counted, not rendered ({n})").format(n=f"{counted:,}"),
+        "evidence": _("Human-vs-injected evidence"),
+        "evidence_note": _("Which signal classified each string-content user record. "
+                           "<code>promptSource</code> and <code>origin.kind</code> are "
+                           "authoritative; the rest are fallbacks for older records."),
+        "caveats": _("Caveats"),
+        "source": _("Source: <code>{path}</code> &middot; archiver v{version}").format(
+            path=esc(str(path)), version=VERSION),
+    }
     return f"""
 <section class="turn report-turn" id="fidelity">
-  <div class="turn-label"><span class="who">Fidelity report</span></div>
+  <div class="turn-label"><span class="who">{L["title"]}</span></div>
   <div class="turn-body report-body">
-    <p>Every record in the source, and what happened to it. Nothing is dropped silently:
-       a record is either rendered below, folded into an earlier turn, or counted here as
-       deliberately not rendered.</p>
-    <h4>Record disposition</h4>
+    <p>{L["lead"]}</p>
+    <h4>{L["disposition"]}</h4>
     {disposition_html}
     <div class="report-grid">
       <div>
-        <h4>Source records by type</h4>
+        <h4>{L["by_type"]}</h4>
         <div class="table-wrap"><table class="mini"><tbody>{rows(t.record_types)}</tbody></table></div>
-        <h4>Content blocks</h4>
+        <h4>{L["blocks"]}</h4>
         <div class="table-wrap"><table class="mini"><tbody>{rows(t.blocks)}</tbody></table></div>
       </div>
       <div>
-        <h4>Rendered ({rendered:,} turns)</h4>
+        <h4>{L["rendered"]}</h4>
         <div class="table-wrap"><table class="mini"><tbody>{rows(t.rendered_types)}</tbody></table></div>
-        <h4>Counted, not rendered ({counted:,})</h4>
+        <h4>{L["counted"]}</h4>
         <div class="table-wrap"><table class="mini"><tbody>{rows(t.counted_only)}</tbody></table></div>
       </div>
     </div>
-    <h4>Human-vs-injected evidence</h4>
-    <p class="muted small">Which signal classified each string-content user record. <code>promptSource</code>
-       and <code>origin.kind</code> are authoritative; the rest are fallbacks for older records.</p>
+    <h4>{L["evidence"]}</h4>
+    <p class="muted small">{L["evidence_note"]}</p>
     <div class="table-wrap"><table class="mini"><tbody>{rows(t.classification)}</tbody></table></div>
     {subagent_block(agents, subagents_on)}
-    <h4>Caveats</h4>
+    <h4>{L["caveats"]}</h4>
     <ul>{''.join(f'<li>{w}</li>' for w in warn)}</ul>
-    <p class="muted small">Source: <code>{esc(str(path))}</code> &middot;
-       archiver v{VERSION}</p>
+    <p class="muted small">{L["source"]}</p>
   </div>
 </section>"""
 
@@ -1622,19 +2451,19 @@ def subagent_block(agents: list, subagents_on: bool) -> str:
     prevent."""
     if not agents:
         return ""
-    note = ("Rendered in full in the Subagent transcripts section below."
+    note = (_("Rendered in full in the Subagent transcripts section below.")
             if subagents_on else
-            "<strong>Not rendered</strong> (--subagents off) — listed here so the "
-            "omission is on the record. Their token usage is still counted above.")
+            _("<strong>Not rendered</strong> (--subagents off) — listed here so the omission is "
+              "on the record. Their token usage is still counted above."))
     rows = "".join(
         f"<tr><td><code>agent-{esc(aid)}</code></td>"
         f"<td class=num>{sum(at.record_types.values()):,}</td>"
         f"<td class=num>{len(at.turns):,}</td></tr>"
         for aid, _af, at in agents)
-    return (f"<h4>Subagent transcripts ({len(agents)})</h4>"
+    return (f"<h4>{_('Subagent transcripts ({n})').format(n=len(agents))}</h4>"
             f'<p class="muted small">{note}</p>'
             '<div class="table-wrap"><table class="mini"><tbody>'
-            "<tr><th>file</th><th>records</th><th>turns</th></tr>"
+            f"<tr><th>{_('file')}</th><th>{_('records')}</th><th>{_('turns')}</th></tr>"
             f"{rows}</tbody></table></div>")
 
 
@@ -1667,7 +2496,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             toc.append((anchor, (f"{tag} · " if tag else "") + truncate(turn["text"], 66), "human"))
             body.append(f"""
 <section class="turn human-turn" id="{anchor}" data-lane="human">
-  <div class="turn-label"><span class="who">Human{tag_html}</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
+  <div class="turn-label"><span class="who">{_("Human")}{tag_html}</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
   <div class="turn-body">{turn["html"]}</div>
 </section>""")
 
@@ -1675,11 +2504,11 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             counter += 1
             anchor = f"{anchor_prefix}turn-{counter}"
             cur_anchor = anchor
-            toc.append((anchor, turn["badge"], "system"))
-            ev = f'<span class="evidence" title="how this was classified">{esc(turn.get("evidence", ""))}</span>'
+            toc.append((anchor, _(turn["badge"]), "system"))
+            ev = f'<span class="evidence" title="{_("how this was classified")}">{esc(turn.get("evidence", ""))}</span>'
             body.append(f"""
 <section class="turn system-turn" id="{anchor}" data-lane="system">
-  <div class="turn-label"><span class="who">System</span><span class="badge">{esc(turn["badge"])}</span>{ev}<span class="ts"{ts_attr}>{ts_disp}</span></div>
+  <div class="turn-label"><span class="who">{_("System")}</span><span class="badge">{esc(_(turn["badge"]))}</span>{ev}<span class="ts"{ts_attr}>{ts_disp}</span></div>
   <div class="turn-body"><details><summary>{esc(truncate(turn["text"], 110))}</summary><pre class="plain">{esc(turn["text"])}</pre></details></div>
 </section>""")
 
@@ -1687,17 +2516,17 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             counter += 1
             anchor = f"{anchor_prefix}turn-{counter}"
             cur_anchor = anchor
-            label = turn["badge"] + (f" — {turn['detail']}" if turn.get("detail") else "")
+            label = _(turn["badge"]) + (f" — {turn['detail']}" if turn.get("detail") else "")
             toc.append((anchor, label, "system"))
             body_html = (f'<pre class="plain">{esc(turn["text"])}</pre>' if turn["text"] else "")
             body.append(f"""
 <section class="turn event-turn" id="{anchor}" data-lane="system">
-  <div class="turn-label"><span class="who">Event</span><span class="badge">{esc(turn["badge"])}</span><span class="evidence">{esc(turn.get("detail", ""))}</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
+  <div class="turn-label"><span class="who">{_("Event")}</span><span class="badge">{esc(_(turn["badge"]))}</span><span class="evidence">{esc(turn.get("detail", ""))}</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
   <div class="turn-body">{body_html}</div>
 </section>""")
 
         elif kind == "assistant":
-            side = ' <span class="badge side">subagent</span>' if turn.get("sidechain") else ""
+            side = f' <span class="badge side">{_("subagent")}</span>' if turn.get("sidechain") else ""
             tag = turn.get("tag", "")
             tag_html = f' <span class="rtag" id="{esc(tag)}">{esc(tag)}</span>' if tag else ""
             body.append(f"""
@@ -1710,7 +2539,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             body.append(f"""
 <section class="turn thinking-turn" data-lane="thinking">
   <details>
-    <summary><span class="who">Thinking</span><span class="ts"{ts_attr}>{ts_disp}</span></summary>
+    <summary><span class="who">{_("Thinking")}</span><span class="ts"{ts_attr}>{ts_disp}</span></summary>
     <div class="turn-body">{turn["html"]}</div>
   </details>
 </section>""")
@@ -1718,17 +2547,17 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
         elif kind == "user_image":
             body.append(f"""
 <section class="turn human-turn" data-lane="human">
-  <div class="turn-label"><span class="who">Human</span><span class="badge">pasted image</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
-  <div class="turn-body"><img loading="lazy" src="data:{esc(turn["media"])};base64,{esc(turn["data"])}" alt="pasted image"></div>
+  <div class="turn-label"><span class="who">{_("Human")}</span><span class="badge">{_("pasted image")}</span><span class="ts"{ts_attr}>{ts_disp}</span></div>
+  <div class="turn-body"><img loading="lazy" src="data:{esc(turn["media"])};base64,{esc(turn["data"])}" alt="{_("pasted image")}"></div>
 </section>""")
 
         elif kind == "harness":
             detail = f'<span class="evidence">{esc(turn.get("detail", ""))}</span>' if turn.get("detail") else ""
-            inner = f'<pre class="plain">{esc(turn["text"])}</pre>' if turn["text"] else "<p class=muted>(no content)</p>"
+            inner = f'<pre class="plain">{esc(turn["text"])}</pre>' if turn["text"] else f"<p class=muted>{_('(no content)')}</p>"
             body.append(f"""
 <section class="turn harness-turn" data-lane="harness">
   <details>
-    <summary><span class="chip harness-chip">harness</span> {esc(turn["badge"])} {detail}<span class="ts"{ts_attr}>{ts_disp}</span></summary>
+    <summary><span class="chip harness-chip">{_("harness")}</span> {esc(_(turn["badge"]))} {detail}<span class="ts"{ts_attr}>{ts_disp}</span></summary>
     <div class="io">{inner}</div>
   </details>
 </section>""")
@@ -1739,34 +2568,36 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
                 classes += " tool-error"
             if not turn["resolved"]:
                 classes += " tool-pending"
-            side = ' <span class="badge side">subagent</span>' if turn.get("sidechain") else ""
+            side = f' <span class="badge side">{_("subagent")}</span>' if turn.get("sidechain") else ""
             # Link only to transcripts that are actually on this page; an
             # agent id with no discovered file would be a dead anchor.
             if agent_href and turn.get("agent_id") in agent_href:
                 side += (f' <a class="badge side" href="{esc(agent_href[turn["agent_id"]])}">'
-                         "transcript &darr;</a>")
+                         f"{_('transcript &darr;')}</a>")
             io = [f"""
-      <div class="io-block"><div class="io-label">Input</div>
+      <div class="io-block"><div class="io-label">{_("Input")}</div>
         <pre class="plain">{esc(pretty_tool_input(turn["input"]))}</pre></div>"""]
             if turn["output_text"]:
-                lbl = "Output (error)" if turn["is_error"] else "Output"
+                lbl = _("Output (error)") if turn["is_error"] else _("Output")
                 extra = ""
                 if turn.get("elided"):
-                    extra = f' <span class="evidence">{turn["elided"]:,} chars elided</span>'
+                    extra = (' <span class="evidence">'
+                             + _("{n} chars elided").format(n=f'{turn["elided"]:,}') + '</span>')
                 io.append(f"""
       <div class="io-block"><div class="io-label">{lbl}{extra}</div>
         <pre class="plain">{esc(turn["output_text"])}</pre></div>""")
             elif turn["resolved"]:
-                io.append('<div class="io-block"><div class="io-label">Output</div>'
-                          '<p class="muted">(empty result)</p></div>')
+                io.append(f'<div class="io-block"><div class="io-label">{_("Output")}</div>'
+                          f'<p class="muted">{_("(empty result)")}</p></div>')
             else:
-                io.append('<div class="io-block"><div class="io-label">Output</div>'
-                          '<p class="muted">No result in the source &mdash; this call was still '
-                          'running (or was interrupted) when the transcript was written.</p></div>')
+                io.append(f'<div class="io-block"><div class="io-label">{_("Output")}</div>'
+                          '<p class="muted">'
+                          + _("No result in the source &mdash; this call was still running (or was "
+                              "interrupted) when the transcript was written.") + '</p></div>')
             for media, data in turn["output_images"]:
                 io.append(f"""
-      <div class="io-block"><div class="io-label">Screenshot</div>
-        <img loading="lazy" src="data:{esc(media)};base64,{esc(data)}" alt="tool screenshot"></div>""")
+      <div class="io-block"><div class="io-label">{_("Screenshot")}</div>
+        <img loading="lazy" src="data:{esc(media)};base64,{esc(data)}" alt="{_("tool screenshot")}"></div>""")
             body.append(f"""
 <section class="turn {classes}" data-lane="tool">
   <details>
@@ -1779,7 +2610,7 @@ def render_turns(t: Transcript, anchor_prefix: str = "",
             body.append(f"""
 <section class="turn harness-turn" data-lane="harness">
   <details>
-    <summary><span class="chip harness-chip">raw</span> {esc(turn["badge"])}<span class="ts"{ts_attr}>{ts_disp}</span></summary>
+    <summary><span class="chip harness-chip">{_("raw")}</span> {esc(_(turn["badge"]))}<span class="ts"{ts_attr}>{ts_disp}</span></summary>
     <div class="io"><pre class="plain">{esc(turn["text"])}</pre></div>
   </details>
 </section>""")
@@ -1867,13 +2698,13 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
 
     if t.turn_duration_records:
         active = fmt_dur_ms(t.turn_durations_ms)
-        active_note = f"summed from {t.turn_duration_records} turn_duration records"
+        active_note = _("summed from {n} turn_duration records").format(n=t.turn_duration_records)
     else:
         gap_cap = datetime.timedelta(minutes=20)
         acc = sum(((b - a) for a, b in zip(ts_dt, ts_dt[1:]) if (b - a) <= gap_cap),
                   datetime.timedelta())
         active = fmt_dur_ms(int(acc.total_seconds() * 1000))
-        active_note = "estimated (no turn_duration records; gaps over 20m ignored)"
+        active_note = _("estimated (no turn_duration records; gaps over 20m ignored)")
 
     # ---- pagination layout, decided before any HTML is rendered ------------
     # Units: one per main turn, then (when rendered) one subagent header and
@@ -1901,27 +2732,31 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     rc = reported_cost(t, started)
     usage_html, usage_totals = usage_table(t, started.date(), rc)
     if agents:
-        usage_html += (f'<p class="muted small">Totals include '
-                       f'{len(agents)} subagent transcript(s).</p>')
+        usage_html += ('<p class="muted small">'
+                       + _("Totals include {n} subagent transcript(s).").format(n=len(agents))
+                       + '</p>')
 
     sub_toc: list[tuple[str, str, str]] = []
     if have_blocks:
         units.append((
             '<section class="turn report-turn" id="subagents">'
-            '<div class="turn-label"><span class="who">Subagent transcripts</span></div>'
-            '<div class="turn-body report-body"><p>Conversations run by background '
-            'agents this session spawned. Each lives in its own file beside the '
-            'session and is rendered here in full, with the same rules as the '
-            'main transcript.</p></div></section>', "subagents"))
+            f'<div class="turn-label"><span class="who">{_("Subagent transcripts")}</span></div>'
+            '<div class="turn-body report-body"><p>'
+            + _("Conversations run by background agents this session spawned. Each lives in its "
+                "own file beside the session and is rendered here in full, with the same rules as "
+                "the main transcript.")
+            + '</p></div></section>', "subagents"))
         for k, (aid, af, at) in enumerate(agents, 1):
-            inner_units, _ = render_turns(at, anchor_prefix=f"sa-{aid}-")
+            inner_units, _toc = render_turns(at, anchor_prefix=f"sa-{aid}-")
             inner = "".join(h for h, _a in inner_units)
             n_rec = sum(at.record_types.values())
+            sa_note = _("{records} records &middot; {turns} turns &middot; turns tagged A{k}.P/A{k}.R").format(
+                records=f"{n_rec:,}", turns=f"{len(at.turns):,}", k=k)
             units.append((f"""
 <section class="turn subagent-block" id="subagent-{esc(aid)}" data-lane="subagent">
   <details>
-    <summary><span class="chip harness-chip">subagent</span> <span class="rtag">A{k}</span> <code>agent-{esc(aid)}</code>
-      <span class="evidence">{n_rec:,} records &middot; {len(at.turns):,} turns &middot; turns tagged A{k}.P/A{k}.R</span></summary>
+    <summary><span class="chip harness-chip">{_("subagent")}</span> <span class="rtag">A{k}</span> <code>agent-{esc(aid)}</code>
+      <span class="evidence">{sa_note}</span></summary>
     <div class="subagent-body">{inner}</div>
   </details>
 </section>""", f"subagent-{aid}"))
@@ -1931,15 +2766,18 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     if related:
         items = []
         for r in related:
-            mark = " (archived here)" if r["session_id"] == used else ""
+            mark = _(" (archived here)") if r["session_id"] == used else ""
             items.append(
                 f"<li><code>{esc(r['session_id'][:8])}</code> &mdash; {r['relation']}, "
-                f"{r['shared']:,} shared records, {r['records']:,} total{mark}</li>")
+                + _("{shared} shared records, {records} total").format(
+                    shared=f"{r['shared']:,}", records=f"{r['records']:,}")
+                + f"{mark}</li>")
         chain_html = (
-            '<div class="callout"><strong>This conversation spans more than one transcript '
-            'file.</strong> A resumed or bridged session is written to a new <code>.jsonl</code> '
-            'that repeats the earlier records, so the most complete file is the one archived here.'
-            f'<ul>{"".join(items)}</ul></div>')
+            '<div class="callout">'
+            + _("<strong>This conversation spans more than one transcript file.</strong> A resumed "
+                "or bridged session is written to a new <code>.jsonl</code> that repeats the "
+                "earlier records, so the most complete file is the one archived here.")
+            + f'<ul>{"".join(items)}</ul></div>')
 
     def info_row(k, v, title_attr=""):
         ta = f' title="{esc(title_attr)}"' if title_attr else ""
@@ -1947,45 +2785,49 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
 
     models_str = ", ".join(f"{esc(m)}" for m in sorted(t.models))
     session_info = "".join([
-        info_row("Session ID", f"<code>{esc(used)}</code>"),
-        info_row("Requested", f"<code>{esc(requested)}</code>") if used != requested else "",
-        info_row("Started", esc(fmt_local(started)), fmt_utc(started)),
-        info_row("Last record", esc(fmt_local(ended)), fmt_utc(ended)),
-        info_row("Archived at", esc(fmt_local(archived_at)), fmt_utc(archived_at)),
-        info_row("Wall clock", esc(fmt_dur_ms(int(wall.total_seconds() * 1000)))),
-        info_row("Active time", esc(active), active_note),
-        info_row("Models", models_str),
-        info_row("Effort", ", ".join(f"{k} ×{v}" for k, v in t.effort.most_common())) if t.effort else "",
+        info_row(_("Session ID"), f"<code>{esc(used)}</code>"),
+        info_row(_("Requested"), f"<code>{esc(requested)}</code>") if used != requested else "",
+        info_row(_("Started"), esc(fmt_local(started)), fmt_utc(started)),
+        info_row(_("Last record"), esc(fmt_local(ended)), fmt_utc(ended)),
+        info_row(_("Archived at"), esc(fmt_local(archived_at)), fmt_utc(archived_at)),
+        info_row(_("Wall clock"), esc(fmt_dur_ms(int(wall.total_seconds() * 1000)))),
+        info_row(_("Active time"), esc(active), active_note),
+        info_row(_("Models"), models_str),
+        info_row(_("Effort"), ", ".join(f"{k} ×{v}" for k, v in t.effort.most_common())) if t.effort else "",
         info_row("Claude Code", f"v{esc(t.version or '?')}"),
-        info_row("Working dir", f"<code>{esc(t.cwd or '')}</code>"),
-        info_row("Human turns", f"{t.rendered_types.get('human turn', 0):,}"),
-        info_row("Claude messages", f"{t.rendered_types.get('assistant text', 0):,}"),
-        info_row("Thinking blocks",
-                 f"{t.rendered_types.get('thinking', 0):,} with text, "
-                 f"{t.empty_thinking:,} empty",
-                 "Claude Code requests thinking with display=omitted, so the reasoning text is "
-                 "never written to the transcript"),
-        info_row("Tool calls", f"{t.rendered_types.get('tool call', 0):,}"),
-        info_row("Subagents",
-                 f"{len(agents)} transcript(s), "
-                 f"{sum(sum(at.record_types.values()) for _, _, at in agents):,} records"
-                 + ("" if include_agents else " (not rendered: --subagents off)"))
+        info_row(_("Working dir"), f"<code>{esc(t.cwd or '')}</code>"),
+        info_row(_("Human turns"), f"{t.rendered_types.get('human turn', 0):,}"),
+        info_row(_("Claude messages"), f"{t.rendered_types.get('assistant text', 0):,}"),
+        info_row(_("Thinking blocks"),
+                 _("{with} with text, {empty} empty").format(
+                     **{"with": f"{t.rendered_types.get('thinking', 0):,}",
+                        "empty": f"{t.empty_thinking:,}"}),
+                 _("Claude Code requests thinking with display=omitted, so the reasoning text is "
+                   "never written to the transcript")),
+        info_row(_("Tool calls"), f"{t.rendered_types.get('tool call', 0):,}"),
+        info_row(_("Subagents"),
+                 _("{n} transcript(s), {records} records").format(
+                     n=len(agents),
+                     records=f"{sum(sum(at.record_types.values()) for _a, _f, at in agents):,}")
+                 + ("" if include_agents else _(" (not rendered: --subagents off)")))
         if agents else "",
-        info_row("Harness events",
+        info_row(_("Harness events"),
                  f"{sum(v for k, v in t.rendered_types.items() if k.startswith(('harness', 'system'))):,}"),
-        info_row("Output tokens", f"{usage_totals['output']:,}"),
-        info_row("Cache reads", f"{usage_totals['cache_read']:,}"),
-        info_row("List cost", f"${usage_totals['cost']:,.2f}"),
-        info_row("Reported cost",
-                 f"${rc['usd']:,.2f} reported by Claude Code ({rc['runs']} run(s)"
-                 + (", partial: earlier runs not covered" if rc["partial"] else "") + ")")
+        info_row(_("Output tokens"), f"{usage_totals['output']:,}"),
+        info_row(_("Cache reads"), f"{usage_totals['cache_read']:,}"),
+        info_row(_("List cost"), f"${usage_totals['cost']:,.2f}"),
+        info_row(_("Reported cost"),
+                 _("${usd} reported by Claude Code ({runs} run(s){partial})").format(
+                     usd=f"{rc['usd']:,.2f}", runs=rc["runs"],
+                     partial=_(", partial: earlier runs not covered") if rc["partial"] else ""))
         if rc else "",
-        info_row("Compactions", f"{len(t.compactions):,}") if t.compactions else "",
-        info_row("Harness retractions", esc("; ".join(
-            f"{r['retracted']} message(s) after a safeguard refusal at {(r['ts'] or '')[11:19]} UTC, "
-            f"{r['from']} -> {r['to']}" + (f", {r['absent']} absent from the source" if r["absent"] else "")
+        info_row(_("Compactions"), f"{len(t.compactions):,}") if t.compactions else "",
+        info_row(_("Harness retractions"), esc("; ".join(
+            _("{n} message(s) after a safeguard refusal at {time} UTC, {src} -> {dst}").format(
+                n=r["retracted"], time=(r["ts"] or "")[11:19], src=r["from"], dst=r["to"])
+            + (_(", {n} absent from the source").format(n=r["absent"]) if r["absent"] else "")
             for r in t.retractions))) if t.retractions else "",
-        info_row("Skills used", esc(", ".join(sorted(t.skills)))) if t.skills else "",
+        info_row(_("Skills used"), esc(", ".join(sorted(t.skills)))) if t.skills else "",
     ])
 
     anchor_page = {"summary": 1, "usage": 1, "fidelity": 1}
@@ -1999,9 +2841,9 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
 
     def toc_for(cur_page: int) -> str:
         items = [
-            f'<a href="{href_to("summary", cur_page)}" class="toc-item toc-key">Session summary</a>',
-            f'<a href="{href_to("usage", cur_page)}" class="toc-item toc-key">Usage &amp; cost</a>',
-            f'<a href="{href_to("fidelity", cur_page)}" class="toc-item toc-key">Fidelity report</a>']
+            f'<a href="{href_to("summary", cur_page)}" class="toc-item toc-key">{_("Session summary")}</a>',
+            f'<a href="{href_to("usage", cur_page)}" class="toc-item toc-key">{_("Usage &amp; cost")}</a>',
+            f'<a href="{href_to("fidelity", cur_page)}" class="toc-item toc-key">{_("Fidelity report")}</a>']
         for anchor, label, cls in toc + sub_toc:
             items.append(f'<a href="{href_to(anchor, cur_page)}" '
                          f'class="toc-item toc-{cls}">{esc(label)}</a>')
@@ -2010,18 +2852,19 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
     def nav_for(cur_page: int) -> str:
         if n_pages == 1:
             return ""
-        parts = [f"Page {cur_page} of {n_pages}"]
+        parts = [_("Page {cur} of {n}").format(cur=cur_page, n=n_pages)]
         if cur_page > 1:
-            parts.append(f'<a href="{page_file(cur_page - 1)}">&larr; prev</a>')
+            parts.append(f'<a href="{page_file(cur_page - 1)}">{_("&larr; prev")}</a>')
         for k in range(1, n_pages + 1):
             parts.append(f"<strong>{k}</strong>" if k == cur_page
                          else f'<a href="{page_file(k)}">{k}</a>')
         if cur_page < n_pages:
-            parts.append(f'<a href="{page_file(cur_page + 1)}">next &rarr;</a>')
+            parts.append(f'<a href="{page_file(cur_page + 1)}">{_("next &rarr;")}</a>')
         return '<nav class="page-nav">' + " &middot; ".join(parts) + "</nav>"
 
     meta = {
         "archiver_version": VERSION,
+        "lang": LANG,
         "session_id": used,
         "requested_session_id": requested,
         "title": title,
@@ -2049,23 +2892,24 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
                        "records": sum(at.record_types.values()),
                        "turns": len(at.turns),
                        "rendered": include_agents}
-                      for aid, _, at in agents],
+                      for aid, _af, at in agents],
         "pages": [page_file(k) for k in range(1, n_pages + 1)],
     }
 
-    subtitle = (f"{fmt_local(started)} – {fmt_local(ended)} · "
-                f"{t.rendered_types.get('human turn', 0)} human turns · "
-                f"{t.rendered_types.get('tool call', 0)} tool calls · "
-                + (f"${rc['usd']:,.2f} reported by Claude Code"
+    subtitle = (_("{start} – {end} · {humans} human turns · {tools} tool calls · ").format(
+                    start=fmt_local(started), end=fmt_local(ended),
+                    humans=t.rendered_types.get("human turn", 0),
+                    tools=t.rendered_types.get("tool call", 0))
+                + (_("${usd} reported by Claude Code").format(usd=f"{rc['usd']:,.2f}")
                    if rc and not rc["partial"] else
-                   f"${usage_totals['cost']:,.2f} at list price"))
+                   _("${usd} at list price").format(usd=f"{usage_totals['cost']:,.2f}")))
 
     lead_html = (chain_html
                  + '<section class="turn summary-turn" id="summary">'
-                   '<div class="turn-label"><span class="who">Session summary</span></div>'
+                   f'<div class="turn-label"><span class="who">{_("Session summary")}</span></div>'
                    f'<div class="turn-body summary-body">{summary_inner}</div></section>'
                  + '<section class="turn usage-turn" id="usage">'
-                   '<div class="turn-label"><span class="who">Usage &amp; cost</span></div>'
+                   f'<div class="turn-label"><span class="who">{_("Usage &amp; cost")}</span></div>'
                    f'<div class="turn-body usage-body">{usage_html}</div></section>'
                  + fidelity_section(t, path, archived_at, agents=agents,
                                     subagents_on=include_agents))
@@ -2083,7 +2927,13 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             chunk = (units[(k - 1) * per_page: k * per_page] if per_page
                      else units)
             page = _TEMPLATE.format(
-                title=esc(title) + (f" — page {k}/{n_pages}" if n_pages > 1 else ""),
+                title=esc(title) + (_(" — page {k}/{n}").format(k=k, n=n_pages) if n_pages > 1 else ""),
+                lang=LANG,
+                i18n_json=json.dumps({
+                    "light": _("Light theme"), "dark": _("Dark theme"),
+                    "match": _("{shown} of {total} turns match")}, ensure_ascii=False
+                    ).replace("</", "<\\/"),
+                shell=_shell_words(),
                 session_info=session_info,
                 toc_html=toc_for(k),
                 page_nav=nav_for(k),
@@ -2160,7 +3010,7 @@ def build(session_id: str, title: str, out_path: Path, summary_inner: str,
             f"counted-only={sum(t.counted_only.values())} unresolved-tools={t.unresolved_tools}")
     if agents:
         CON.say(f"  subagents={len(agents)} transcript(s), "
-                f"{sum(sum(at.record_types.values()) for _, _, at in agents)} records"
+                f"{sum(sum(at.record_types.values()) for _a, _f, at in agents)} records"
                 + ("" if include_agents else " (not rendered: --subagents off)"))
     CON.say(f"  output={usage_totals['output']:,} tok  cache-read={usage_totals['cache_read']:,} tok  "
             f"list-cost=${usage_totals['cost']:,.2f}"
@@ -2655,10 +3505,10 @@ def html_fragment_to_text(frag: str) -> str:
 def fidelity_lines(t) -> list:
     """The four reconciliation numbers, identical in every format."""
     d = t.disposition
-    return [("records that produced one or more turns below", d["rendered"]),
-            ("records folded into an earlier turn (tool results)", d["folded"]),
-            ("records counted only (no transcript content)", d["counted"]),
-            ("total records in the source", sum(t.record_types.values()))]
+    return [(_("records that produced one or more turns below"), d["rendered"]),
+            (_("records folded into an earlier turn (tool results)"), d["folded"]),
+            (_("records counted only (no transcript content)"), d["counted"]),
+            (_("total records in the source"), sum(t.record_types.values()))]
 
 
 def soft_wrap(text: str, width: int = 100) -> str:
@@ -2682,23 +3532,18 @@ def wrap_prose(text: str, width: int = 100, indent: str = "") -> str:
     return "\n\n".join(out)
 
 
-_NOTE_WITH_IO = ("Every turn in the HTML archive is present here, with tool input and "
-                 "output in full. Images embedded in tool results cannot travel in this "
-                 "format and are marked as omitted; ANSI colour codes are stripped. Human "
-                 "turns and tool output are reproduced verbatim and are never re-wrapped.")
-
-_NOTE_NO_IO = ("Every turn in the HTML archive is present here, but tool calls are reduced "
-               "to a single labelled line: their input and output are omitted, because a "
-               "page-based format renders them as unreadable walls of escaped JSON. The "
-               "HTML archive holds all of it. Human turns and Claude's prose are complete "
-               "and reproduced verbatim.")
-
-
 def _format_note(tool_output: bool, omitted: int) -> str:
     if tool_output:
-        return _NOTE_WITH_IO
-    return _NOTE_NO_IO + (f" {omitted:,} tool calls are shown by name only."
-                          if omitted else "")
+        return _("Every turn in the HTML archive is present here, with tool input and output in "
+                 "full. Images embedded in tool results cannot travel in this format and are "
+                 "marked as omitted; ANSI colour codes are stripped. Human turns and tool output "
+                 "are reproduced verbatim and are never re-wrapped.")
+    return (_("Every turn in the HTML archive is present here, but tool calls are reduced to a "
+              "single labelled line: their input and output are omitted, because a page-based "
+              "format renders them as unreadable walls of escaped JSON. The HTML archive holds "
+              "all of it. Human turns and Claude's prose are complete and reproduced verbatim.")
+            + (_(" {n} tool calls are shown by name only.").format(n=f"{omitted:,}")
+               if omitted else ""))
 
 
 def _turn_rule(label: str, ts: str, width: int, right: bool) -> list:
@@ -2721,7 +3566,7 @@ def _text_turns(turns, L, W, tool_output):
         ts = (turn.get("ts") or "")[:19].replace("T", " ")
         kind = turn["kind"]
         if kind == "human":
-            label = "HUMAN" + (f" - {turn['tag']}" if turn.get("tag") else "")
+            label = _("HUMAN") + (f" - {turn['tag']}" if turn.get("tag") else "")
             L += [""] + _turn_rule(label, ts, W, right=True) + ["", turn["text"].rstrip(), ""]
         elif kind == "assistant":
             label = ("CLAUDE" + (f" - {turn['tag']}" if turn.get("tag") else "")
@@ -2729,31 +3574,31 @@ def _text_turns(turns, L, W, tool_output):
             L += [""] + _turn_rule(label, ts, W, right=False)
             L += ["", wrap_prose(turn.get("text", ""), W), ""]
         elif kind == "thinking":
-            L += [""] + _turn_rule("THINKING", ts, W, right=False)
-            L += ["", wrap_prose(turn.get("text", "") or "(no text: display=omitted)", W), ""]
+            L += [""] + _turn_rule(_("THINKING"), ts, W, right=False)
+            L += ["", wrap_prose(turn.get("text", "") or _("(no text: display=omitted)"), W), ""]
         elif kind == "user_image":
-            L += [""] + _turn_rule("HUMAN - PASTED IMAGE", ts, W, right=True)
-            L += ["", "  (image omitted in this format; the HTML archive holds it)", ""]
+            L += [""] + _turn_rule(_("HUMAN - PASTED IMAGE"), ts, W, right=True)
+            L += ["", "  " + _("(image omitted in this format; the HTML archive holds it)"), ""]
         elif kind == "tool":
-            err = "  [ERROR]" if turn.get("is_error") else ""
-            head = shorten("TOOL " + str(turn.get("chip", "")) + " - "
+            err = "  " + _("[ERROR]") if turn.get("is_error") else ""
+            head = shorten(_("TOOL") + " " + str(turn.get("chip", "")) + " - "
                            + str(turn.get("label", "")) + err, 84)
             if not tool_output:
                 L += ["", "  . " + head + "   " + ts]
                 continue
-            L += [""] + _turn_rule(head, ts, W, right=False) + ["", "  input:"]
+            L += [""] + _turn_rule(head, ts, W, right=False) + ["", "  " + _("input:")]
             L += ["    " + ln
                   for ln in pretty_tool_input(turn.get("input") or "").splitlines()]
             if turn.get("output_text"):
-                L += ["", "  output:"]
+                L += ["", "  " + _("output:")]
                 L += ["    " + ln for ln in turn["output_text"].splitlines()]
             elif not turn.get("resolved"):
-                L += ["", "  output: (no result in the source)"]
-            for _ in turn.get("output_images") or []:
-                L.append("    [image omitted]")
+                L += ["", "  " + _("output:") + " " + _("(no result in the source)")]
+            for _img in turn.get("output_images") or []:
+                L.append("    " + _("[image omitted]"))
             L.append("")
         else:
-            label = str(turn.get("badge", kind)).upper()
+            label = _(str(turn.get("badge", kind))).upper()
             if turn.get("detail"):
                 label += " - " + str(turn["detail"])
             L += [""] + _turn_rule(label, ts, W, right=False)
@@ -2764,18 +3609,25 @@ def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
               subagents_on: bool = True) -> str:
     W = 100
     bar = "=" * W
-    L = [bar, "  " + ctx["title"], "  session " + ctx["session_id"],
+    L = [bar, "  " + ctx["title"], "  " + _("session") + " " + ctx["session_id"],
          "  " + ctx["subtitle"], bar, ""]
     if ctx["summary_text"]:
-        L += ["SESSION SUMMARY", "-" * 15, "", wrap_prose(ctx["summary_text"], W), ""]
-    L += ["FIDELITY REPORT", "-" * 15, ""]
-    for label, n in fidelity_lines(t):
-        L.append("  " + label.ljust(52) + format(n, ",").rjust(9))
+        h = _("SESSION SUMMARY")
+        L += [h, "-" * len(h), "", wrap_prose(ctx["summary_text"], W), ""]
+    h = _("FIDELITY REPORT")
+    L += [h, "-" * len(h), ""]
+    fl = fidelity_lines(t)
+    sub = [(_("subagent transcript agent-{aid}").format(aid=aid)
+            + ("" if subagents_on else _(" (not rendered)")), sum(at.record_types.values()))
+           for aid, _af, at in agents]
+    # The label column follows the longest label: a translated one can run
+    # past the English width and must not push the numbers out of line.
+    col = max(52, max(len(lbl) for lbl, _n in fl + sub) + 2)
+    for label, n in fl:
+        L.append("  " + label.ljust(col) + format(n, ",").rjust(9))
     L.append(f"  archiver v{VERSION}")
-    for aid, _af, at in agents:
-        L.append("  " + f"subagent transcript agent-{aid}"
-                 f"{'' if subagents_on else ' (not rendered)'}".ljust(52)
-                 + format(sum(at.record_types.values()), ",").rjust(9))
+    for label, n in sub:
+        L.append("  " + label.ljust(col) + format(n, ",").rjust(9))
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
     if ctx.get("cost_note"):
         L += ["", wrap_prose(ctx["cost_note"], W)]
@@ -2784,9 +3636,9 @@ def emit_text(t, ctx: dict, tool_output: bool = True, agents: list = (),
     if agents and subagents_on:
         for k, (aid, _af, at) in enumerate(agents, 1):
             L += ["", bar,
-                  f"  SUBAGENT TRANSCRIPT A{k}: agent-{aid}  "
-                  f"({sum(at.record_types.values()):,} records; "
-                  f"turns tagged A{k}.P / A{k}.R)", bar]
+                  "  " + _("SUBAGENT TRANSCRIPT A{k}: agent-{aid}  ({records} records; turns "
+                           "tagged A{k}.P / A{k}.R)").format(
+                               k=k, aid=aid, records=f"{sum(at.record_types.values()):,}"), bar]
             _text_turns(at.turns, L, W, tool_output)
     return "\n".join(L) + "\n"
 
@@ -2804,25 +3656,24 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
     live; human turns and tool I/O are fenced so nothing in them can be
     reinterpreted -- the same verbatim guarantee the text format gives."""
     L = [f"# {ctx['title']}", "",
-         f"- Session: `{ctx['session_id']}`",
+         "- " + _("Session: `{sid}`").format(sid=ctx["session_id"]),
          f"- {ctx['subtitle']}", ""]
     if ctx["summary_text"]:
-        L += ["## Session summary", "", ctx["summary_text"], ""]
-    L += ["## Fidelity report", ""]
+        L += ["## " + _("Session summary"), "", ctx["summary_text"], ""]
+    L += ["## " + _("Fidelity report"), ""]
     for label, n in fidelity_lines(t):
         L.append(f"- {label}: {n:,}")
     L.append(f"- archiver v{VERSION}")
     for aid, _af, at in agents:
-        L.append(f"- subagent transcript agent-{aid}"
-                 f"{'' if subagents_on else ' (not rendered)'}: "
+        L.append("- " + _("subagent transcript agent-{aid}").format(aid=aid)
+                 + ("" if subagents_on else _(" (not rendered)")) + ": "
                  f"{sum(at.record_types.values()):,}")
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
     if ctx.get("cost_note"):
         L += ["", ctx["cost_note"]]
     L += ["", _format_note(tool_output, n_tools),
-          "Human turns and tool I/O are fenced verbatim below; Claude's own "
-          "prose is markdown and is left live, so its headings appear in this "
-          "document's outline.", ""]
+          _("Human turns and tool I/O are fenced verbatim below; Claude's own prose is markdown "
+            "and is left live, so its headings appear in this document's outline."), ""]
 
     def turns_md(turns):
         for turn in turns:
@@ -2830,34 +3681,33 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
             kind = turn["kind"]
             if kind == "human":
                 tg = f" - {turn['tag']}" if turn.get("tag") else ""
-                L.extend([f"## Human{tg} — {ts}", "",
+                L.extend([f"## {_('Human')}{tg} — {ts}", "",
                           _md_fence(turn["text"].rstrip()), ""])
             elif kind == "assistant":
                 tg = f" - {turn['tag']}" if turn.get("tag") else ""
                 L.extend([f"## Claude{tg} — {ts}", "", turn.get("text", ""), ""])
             elif kind == "thinking":
-                L.extend([f"### Thinking — {ts}", "",
-                          turn.get("text", "") or "*(no text: display=omitted)*", ""])
+                L.extend([f"### {_('Thinking')} — {ts}", "",
+                          turn.get("text", "") or f"*{_('(no text: display=omitted)')}*", ""])
             elif kind == "user_image":
-                L.extend([f"## Human — pasted image — {ts}", "",
-                          "*(image omitted in this format; the HTML archive "
-                          "holds it)*", ""])
+                L.extend([f"## {_('Human — pasted image')} — {ts}", "",
+                          f"*{_('(image omitted in this format; the HTML archive holds it)')}*", ""])
             elif kind == "tool":
-                err = " **[ERROR]**" if turn.get("is_error") else ""
+                err = f" **{_('[ERROR]')}**" if turn.get("is_error") else ""
                 head = shorten(str(turn.get("chip", "")) + " — "
                                + str(turn.get("label", "")), 90)
-                L.append(f"**Tool · {head}**{err} · {ts}")
+                L.append(f"**{_('Tool')} · {head}**{err} · {ts}")
                 if tool_output:
                     L.extend(["", _md_fence(pretty_tool_input(turn.get("input") or ""))])
                     if turn.get("output_text"):
                         L.extend(["", _md_fence(turn["output_text"])])
                     elif not turn.get("resolved"):
-                        L.extend(["", "*(no result in the source)*"])
-                    for _ in turn.get("output_images") or []:
-                        L.extend(["", "*(image omitted in this format)*"])
+                        L.extend(["", f"*{_('(no result in the source)')}*"])
+                    for _img in turn.get("output_images") or []:
+                        L.extend(["", f"*{_('(image omitted in this format)')}*"])
                 L.append("")
             else:
-                badge = str(turn.get("badge", kind))
+                badge = _(str(turn.get("badge", kind)))
                 if turn.get("detail"):
                     badge += " — " + str(turn["detail"])
                 L.append(f"> **{badge}** · {ts}")
@@ -2869,9 +3719,9 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
     if agents and subagents_on:
         for k, (aid, _af, at) in enumerate(agents, 1):
             L.extend(["", "---", "",
-                      f"# Subagent transcript A{k}: agent-{aid}",
-                      f"*({sum(at.record_types.values()):,} records; a background "
-                      "agent's own conversation)*", ""])
+                      "# " + _("Subagent transcript A{k}: agent-{aid}").format(k=k, aid=aid),
+                      "*" + _("({records} records; a background agent's own conversation)").format(
+                          records=f"{sum(at.record_types.values()):,}") + "*", ""])
             turns_md(at.turns)
     return "\n".join(L) + "\n"
 
@@ -2998,16 +3848,26 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     if fragment:
         B.append(_FRAGMENT_HEAD)
     if not fragment:
-        B.append(_TEX_PREAMBLE)
+        pre = _TEX_PREAMBLE
+        if LANG in _TEX_LANGUAGE:
+            # Hyphenation and typographic conventions of the document language;
+            # only when polyglossia is installed, so a lean TeX still compiles.
+            pre = pre.replace(
+                "\\usepackage{fontspec}\n",
+                "\\usepackage{fontspec}\n\\IfFileExists{polyglossia.sty}{\\usepackage{polyglossia}"
+                "\\setdefaultlanguage" + _TEX_LANGUAGE[LANG] + "}{}\n", 1)
+        B.append(pre)
         B.append("\\title{" + inl(ctx["title"]) + "}\n\\date{}\n")
         B.append("\\begin{document}\n\\maketitle\n")
         B.append("\\begin{center}\\texttt{" + esc(ctx["session_id"]) + "}\\\\\n")
         B.append(inl(ctx["subtitle"]) + "\\end{center}\n")
         B.append("\\tableofcontents\n\\newpage\n")
     if ctx["summary_text"]:
-        B.append("\\section*{Session summary}\n\\addcontentsline{toc}{section}{Session summary}\n")
+        h = inl(_("Session summary"))
+        B.append("\\section*{" + h + "}\n\\addcontentsline{toc}{section}{" + h + "}\n")
         B.append(md(ctx["summary_text"]))
-    B.append("\\section*{Fidelity report}\n\\addcontentsline{toc}{section}{Fidelity report}\n")
+    h = inl(_("Fidelity report"))
+    B.append("\\section*{" + h + "}\n\\addcontentsline{toc}{section}{" + h + "}\n")
     B.append("\\begin{tabular}{lr}\n\\toprule\n")
     for label, n in fidelity_lines(t):
         B.append(esc(label) + " & " + format(n, ",") + " \\\\\n")
@@ -3023,7 +3883,8 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     # itself contained the placeholder text.
     B.append("")
     dropnote_slot = len(B) - 1
-    B.append("\\section*{Transcript}\n\\addcontentsline{toc}{section}{Transcript}\n")
+    h = inl(_("Transcript"))
+    B.append("\\section*{" + h + "}\n\\addcontentsline{toc}{section}{" + h + "}\n")
     def box(env, title, inner):
         return ("\\begin{" + env + "}{" + title + "}\n" + inner
                 + "\\end{" + env + "}\n")
@@ -3038,7 +3899,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
         if len(boxes) > 1:
             tally["split_boxes"] += 1
         for k, pieces in enumerate(boxes, 1):
-            part = f" (part {k}/{len(boxes)})" if len(boxes) > 1 else ""
+            part = inl(_(" (part {k}/{n})").format(k=k, n=len(boxes))) if len(boxes) > 1 else ""
             B.append(box(env, label + part + stamp(ts),
                          _set_pieces(pieces, tally, neutral)
                          + (tail if k == len(boxes) else "")))
@@ -3062,38 +3923,39 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
             kind = turn["kind"]
             if kind == "human":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
-                verbatim_boxes("humanturn", "HUMAN" + tg, ts, turn["text"].rstrip())
+                verbatim_boxes("humanturn", esc(_("HUMAN")) + tg, ts, turn["text"].rstrip())
             elif kind == "assistant":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
                 md_boxes("claudeturn", "CLAUDE" + tg, ts, turn.get("text", ""))
             elif kind == "thinking":
-                md_boxes("thinkturn", "THINKING", ts,
-                         turn.get("text", "") or "(no text: display=omitted)")
+                md_boxes("thinkturn", esc(_("THINKING")), ts,
+                         turn.get("text", "") or _("(no text: display=omitted)"))
             elif kind == "tool":
-                err = " [ERROR]" if turn.get("is_error") else ""
+                err = " " + _("[ERROR]") if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
                                    + str(turn.get("label", "")) + err))
-                title = "TOOL: " + head + stamp(ts)
+                tool_head = esc(_("TOOL")) + ": " + head
+                title = tool_head + stamp(ts)
                 if not tool_output:
                     # A bare title box: the call is on the record, its payload is not.
                     B.append("\\begin{toolturn}{" + title + "}\\end{toolturn}\n")
                     continue
                 tail = ""
                 if not turn.get("output_text") and not turn.get("resolved"):
-                    tail += inl("(no result in the source)") + "\n\n"
-                for _ in turn.get("output_images") or []:
-                    tail += inl("[image omitted]") + "\n\n"
+                    tail += inl(_("(no result in the source)")) + "\n\n"
+                for _img in turn.get("output_images") or []:
+                    tail += inl(_("[image omitted]")) + "\n\n"
                 segments = [pretty_tool_input(turn.get("input") or "")]
                 if turn.get("output_text"):
                     segments.append(turn["output_text"])
-                verbatim_boxes("toolturn", "TOOL: " + head, ts, *segments, tail=tail)
+                verbatim_boxes("toolturn", tool_head, ts, *segments, tail=tail)
             elif kind == "user_image":
                 B.append(box("humanturn",
-                             "HUMAN - PASTED IMAGE" + stamp(ts),
-                             inl("(image omitted in this format; the HTML "
-                                 "archive holds it)") + "\n\n"))
+                             esc(_("HUMAN - PASTED IMAGE")) + stamp(ts),
+                             inl(_("(image omitted in this format; the HTML archive holds it)"))
+                             + "\n\n"))
             else:
-                badge = str(turn.get("badge", kind))
+                badge = _(str(turn.get("badge", kind)))
                 if turn.get("detail"):
                     badge += " - " + str(turn["detail"])
                 badge = esc(shorten(badge))
@@ -3102,48 +3964,47 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     emit_turns(t.turns)
     if agents and subagents_on:
         for k, (aid, _af, at) in enumerate(agents, 1):
-            B.append("\\section*{Subagent transcript A" + str(k) + ": agent-"
-                     + esc(aid) + "}\n"
-                     "\\addcontentsline{toc}{section}{Subagent A" + str(k)
-                     + ": agent-" + esc(aid[:8]) + "}\n")
-            B.append(inl(f"({sum(at.record_types.values()):,} records; a background "
-                         "agent's own conversation, archived from its transcript "
-                         "file beside the session)") + "\n\n")
+            B.append("\\section*{" + inl(_("Subagent transcript A{k}: agent-{aid}").format(k=k, aid=aid))
+                     + "}\n\\addcontentsline{toc}{section}{"
+                     + inl(_("Subagent A{k}: agent-{aid}").format(k=k, aid=aid[:8])) + "}\n")
+            B.append(inl(_("({records} records; a background agent's own conversation, archived "
+                           "from its transcript file beside the session)").format(
+                               records=f"{sum(at.record_types.values()):,}")) + "\n\n")
             emit_turns(at.turns)
     elif agents:
-        B.append("\\section*{Subagent transcripts (not rendered)}\n")
-        B.append(inl(f"{len(agents)} subagent transcript file(s) exist for this "
-                     "session but were not rendered (--subagents off): "
-                     + ", ".join(f"agent-{a}" for a, _, _ in agents)
-                     + ". Their token usage is included in the usage table.")
+        B.append("\\section*{" + inl(_("Subagent transcripts (not rendered)")) + "}\n")
+        B.append(inl(_("{n} subagent transcript file(s) exist for this session but were not "
+                       "rendered (--subagents off): {files}. Their token usage is included in "
+                       "the usage table.").format(
+                           n=len(agents), files=", ".join(f"agent-{a}" for a, _f, _t in agents)))
                  + "\n\n")
     if not fragment:
         B.append("\\end{document}\n")
     removed = []
     if tally["glyphs"]:
-        removed.append(format(tally["glyphs"], ",") + " characters (emoji and other glyphs "
-                       "no installed TeX font can set)")
+        removed.append(_("{n} characters (emoji and other glyphs no installed TeX font can set)")
+                       .format(n=format(tally["glyphs"], ",")))
     if tally["controls"]:
-        removed.append(format(tally["controls"], ",") + " control bytes (NUL, backspace and "
-                       "similar, which TeX refuses to read)")
+        removed.append(_("{n} control bytes (NUL, backspace and similar, which TeX refuses to read)")
+                       .format(n=format(tally["controls"], ",")))
     notes = []
     if removed:
-        notes.append("This rendering removed " + " and ".join(removed) + ".")
+        notes.append(_("This rendering removed {what}.").format(what=_(" and ").join(removed)))
     if tally["transliterated"]:
-        notes.append("This fragment is engine-neutral, so it compiles under pdflatex as well "
-                     "as XeLaTeX: " + format(tally["transliterated"], ",") + " characters were "
-                     "transliterated (Greek to math or its name, arrows and box drawing to "
-                     "ASCII).")
+        notes.append(_("This fragment is engine-neutral, so it compiles under pdflatex as well as "
+                       "XeLaTeX: {n} characters were transliterated (Greek to math or its name, "
+                       "arrows and box drawing to ASCII).").format(
+                           n=format(tally["transliterated"], ",")))
     if tally["hardwrapped"]:
-        notes.append(format(tally["hardwrapped"], ",") + " very long lines were hard-wrapped "
-                     "at " + str(_TEX_HARD_WRAP) + " characters so TeX could typeset them.")
+        notes.append(_("{n} very long lines were hard-wrapped at {w} characters so TeX could "
+                       "typeset them.").format(n=format(tally["hardwrapped"], ","), w=_TEX_HARD_WRAP))
     if tally["split_boxes"]:
-        notes.append(format(tally["split_boxes"], ",") + " very large turn(s) were split into "
-                     "consecutive boxes of at most " + format(_TEX_BOX_MAX_LINES, ",")
-                     + " lines each, titled (part k/n), so TeX could hold them in memory; "
-                     "nothing was omitted.")
+        notes.append(_("{n} very large turn(s) were split into consecutive boxes of at most {m} "
+                       "lines each, titled (part k/n), so TeX could hold them in memory; nothing "
+                       "was omitted.").format(n=format(tally["split_boxes"], ","),
+                                              m=format(_TEX_BOX_MAX_LINES, ",")))
     if notes:
-        notes.append("The HTML archive holds all of it unaltered.")
+        notes.append(_("The HTML archive holds all of it unaltered."))
         B[dropnote_slot] = inl(" ".join(notes)) + "\n\n"
     return "".join(B), tally
 
@@ -3295,7 +4156,7 @@ def is_legacy_version(v) -> bool:
 
 def _age_label(seconds: float) -> str:
     if seconds < 90:
-        return "now"
+        return _("now")
     if seconds < 3600:
         return f"{int(seconds // 60)}m"
     if seconds < 86400:
@@ -3305,7 +4166,7 @@ def _age_label(seconds: float) -> str:
 
 _HUMAN_TURN_RE = re.compile(
     r'<section class="turn human-turn" id="([^"]+)"[^>]*>.*?'
-    r'<span class="who">Human(?: <span class="rtag" id="([^"]+)">[^<]*</span>)?</span>.*?'
+    r'<span class="who">[^<]*(?: <span class="rtag" id="([^"]+)">[^<]*</span>)?</span>.*?'
     r'<div class="turn-body"><div class="raw(?: mono)?">(.*?)</div></div>', re.S)
 _SEARCH_TEXT_CAP = 400
 
@@ -3400,15 +4261,15 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
             legacy = is_legacy_version(meta.get("archiver_version", ""))
             stale = bool(meta.get("last_record") and info.last and meta["last_record"][:19] < info.last[:19])
             if legacy:
-                status = '<span class="pill stale">legacy v1</span>'
+                status = f'<span class="pill stale">{_("legacy v1")}</span>'
             elif stale:
-                status = '<span class="pill stale">stale</span>'
+                status = f'<span class="pill stale">{_("stale")}</span>'
             else:
-                status = '<span class="pill ok">archived</span>'
+                status = f'<span class="pill ok">{_("archived")}</span>'
             link = f'<a href="{esc(meta["file"])}">{esc(meta.get("title") or sid)}</a>'
             if legacy:
-                detail = ('written by the v1 archiver &mdash; no embedded metadata, and its counts '
-                          'and token figures are known to be wrong. Re-run to replace it.')
+                detail = _("written by the v1 archiver &mdash; no embedded metadata, and its "
+                           "counts and token figures are known to be wrong. Re-run to replace it.")
             else:
                 # Metadata is read back from files on disk, so a field may be
                 # absent or hand-edited; never let one entry abort the index.
@@ -3419,26 +4280,27 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
                 # session; otherwise the list-price estimate is the honest one.
                 metered = (isinstance(meta.get("reported_cost_usd"), (int, float))
                            and meta.get("reported_cost_partial") is False)
-                cost_txt = (f'${_n("reported_cost_usd", ",.2f")} reported' if metered
-                            else f'${_n("list_cost_usd", ",.2f")} at list price')
-                detail = (f'{_n("records")} records &middot; {_n("tool_calls")} tool calls &middot; '
-                          f'{cost_txt} &middot; {meta["size_mb"]:.1f} MB &middot; '
-                          f'archiver v{meta.get("archiver_version")}')
+                cost_txt = (_("${usd} reported").format(usd=_n("reported_cost_usd", ",.2f")) if metered
+                            else _("${usd} at list price").format(usd=_n("list_cost_usd", ",.2f")))
+                detail = _("{records} records &middot; {tools} tool calls &middot; {cost} &middot; "
+                           "{mb} MB &middot; archiver v{version}").format(
+                               records=_n("records"), tools=_n("tool_calls"), cost=cost_txt,
+                               mb=f'{meta["size_mb"]:.1f}', version=meta.get("archiver_version"))
         elif covered_by:
-            status = '<span class="pill covered">covered</span>'
+            status = f'<span class="pill covered">{_("covered")}</span>'
             link = esc(info.title or sid)
-            detail = f'continued into <code>{esc(covered_by[:8])}</code>, archived there'
+            detail = _("continued into <code>{sid}</code>, archived there").format(sid=esc(covered_by[:8]))
             if covered_dropped:
-                detail += (f' &middot; {covered_dropped} record(s) not carried over '
-                           '(bookkeeping only)')
+                detail += _(" &middot; {n} record(s) not carried over (bookkeeping only)").format(
+                    n=covered_dropped)
         else:
-            status = '<span class="pill missing">not archived</span>'
+            status = f'<span class="pill missing">{_("not archived")}</span>'
             link = esc(info.title or sid)
-            detail = f"{info.records:,} records on disk"
+            detail = _("{n} records on disk").format(n=f"{info.records:,}")
             if info.subagents:
-                detail += f" &middot; {info.subagents} subagent transcript(s)"
+                detail += _(" &middot; {n} subagent transcript(s)").format(n=info.subagents)
         if info.source != "claude-code":
-            detail += f" &middot; source: {esc(info.source)}"
+            detail += _(" &middot; source: {source}").format(source=esc(info.source))
         status_key = re.sub(r"<[^>]+>", "", status).strip()
         title_key = re.sub(r"<[^>]+>", "", link).strip().lower()
         # Activity: computed at generation time, then left to decay in the
@@ -3477,11 +4339,12 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
         if sid in sessions:
             continue
         n_imported += 1
-        kind = meta.get("source_kind") or "source transcript not on disk"
+        kind = meta.get("source_kind") or _("source transcript not on disk")
         link = f'<a href="{esc(meta["file"])}">{esc(meta.get("title") or sid)}</a>'
-        detail = (f'{meta.get("records", "?")} records &middot; {meta["size_mb"]:.1f} MB '
-                  f'&middot; archiver v{esc(str(meta.get("archiver_version")))} '
-                  f'&middot; source: {esc(str(kind))}')
+        detail = _("{records} records &middot; {mb} MB &middot; archiver v{version} &middot; "
+                   "source: {source}").format(
+                       records=meta.get("records", "?"), mb=f'{meta["size_mb"]:.1f}',
+                       version=esc(str(meta.get("archiver_version"))), source=esc(str(kind)))
         title_key = re.sub(r"<[^>]+>", "", link).strip().lower()
 
         def _loc(iso):
@@ -3490,7 +4353,7 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
             except ValueError:
                 return str(iso)[:19].replace("T", " ")
         rows.append(
-            f'<tr><td data-k="archived"><span class="pill ok">archived</span></td>'
+            f'<tr><td data-k="{_("archived")}"><span class="pill ok">{_("archived")}</span></td>'
             '<td class="activity" data-k="~"></td>'
             f'<td data-k="{esc(sid)}"><code>{esc(sid[:8])}</code></td>'
             f'<td data-k="{esc(title_key)}">{link}<div class="muted small">{detail}</div></td>'
@@ -3511,12 +4374,24 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
     page = _INDEX_TEMPLATE.format(
         rows="".join(rows),
         search_json=json.dumps(search_index, ensure_ascii=False).replace("</", "<\\/"),
-        n_prompts=f"{n_prompts:,}",
-        summary=(f"{len(sessions)} sessions on disk &middot; {counts['archived']} archived &middot; "
-                 f"{counts['missing']} not archived directly"
-                 + (f" &middot; {n_imported} archived from imports or deleted sources"
+        lang=LANG,
+        title=_("Claude Code session archive"),
+        note=_("Generated {when}. &ldquo;Covered&rdquo; means the session was resumed into another "
+               "transcript that <em>is</em> archived, so its records live in that file.").format(
+                   when=esc(fmt_local(datetime.datetime.now(datetime.timezone.utc)))),
+        placeholder=_("Search every prompt across all archives ({n} prompts)").format(n=f"{n_prompts:,}"),
+        aria=_("Search prompts across all archives"),
+        h_status=_("status"), h_activity=_("activity"), h_id=_("id"), h_session=_("session"),
+        h_started=_("started"), h_last=_("last record"),
+        i18n_json=json.dumps({
+            "now": _("now"),
+            "status": _("{total} matching prompt(s) in {sessions} session(s)"),
+            "first200": _(" (first 200 shown)")}, ensure_ascii=False).replace("</", "<\\/"),
+        summary=(_("{n} sessions on disk &middot; {archived} archived &middot; {missing} not "
+                   "archived directly").format(n=len(sessions), archived=counts["archived"],
+                                               missing=counts["missing"])
+                 + (_(" &middot; {n} archived from imports or deleted sources").format(n=n_imported)
                     if n_imported else "")),
-        generated=esc(fmt_local(datetime.datetime.now(datetime.timezone.utc))),
         refresh_meta=(f'<meta http-equiv="refresh" content="{int(refresh)}">\n'
                       if refresh else ""),
         css=_CSS,
@@ -3753,6 +4628,8 @@ _JS = """
   /* Theme: follow the OS unless the reader chose; the choice is remembered
      per browser in localStorage (wrapped: storage can be unavailable). */
   var root = document.documentElement;
+  var I18N = {};
+  try { I18N = JSON.parse(document.getElementById('archive-i18n').textContent) || {}; } catch (e) { I18N = {}; }
   var themeBtn = document.getElementById('theme-toggle');
   function currentDark(){
     var t = root.getAttribute('data-theme');
@@ -3761,7 +4638,7 @@ _JS = """
   }
   function applyTheme(t){
     if (t) root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
-    if (themeBtn) themeBtn.textContent = currentDark() ? 'Light theme' : 'Dark theme';
+    if (themeBtn) themeBtn.textContent = currentDark() ? (I18N.light || 'Light theme') : (I18N.dark || 'Dark theme');
   }
   try { applyTheme(localStorage.getItem('archive-theme') || ''); } catch (e) { applyTheme(''); }
   if (themeBtn) themeBtn.addEventListener('click', function(){
@@ -3785,7 +4662,8 @@ _JS = """
       el.classList.toggle('unmatched', !hit);
       if (hit) shown++;
     });
-    if (count) count.textContent = q === '' ? '' : shown + ' of ' + total + ' turns match';
+    if (count) count.textContent = q === '' ? '' :
+      (I18N.match || '{shown} of {total} turns match').replace('{shown}', shown).replace('{total}', total);
   });
 
   var lanes = ['thinking','tool','harness','system','subagent'];
@@ -3833,48 +4711,64 @@ _JS = """
 })();
 """
 
+def _shell_words() -> dict:
+    """The page shell's own words, in the document language."""
+    return {
+        "transcript": _("Session Transcript"),
+        "search": _("Search turns"),
+        "filter": _("Filter contents  ( / )"),
+        "filter_short": _("Filter contents"),
+        "thinking": _("thinking"), "tools": _("tools"), "harness": _("harness"),
+        "events": _("events"), "subagents": _("subagents"),
+        "expand": _("Expand all"), "collapse": _("Collapse all"), "dark": _("Dark theme"),
+        "session": _("Session"), "contents": _("Contents"),
+        "note": _("Timestamps are local; hover for UTC. <kbd>j</kbd>/<kbd>k</kbd> jump between "
+                  "human turns, <kbd>/</kbd> filters the contents list, the search box hides turns "
+                  "that do not match. Thinking, tool I/O and harness events are collapsed &mdash; "
+                  "use the toggles to hide a lane entirely."),
+    }
+
+
 _TEMPLATE = """<!doctype html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
-<title>{title} — Session Transcript</title>
+<title>{title} — {shell[transcript]}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>{css}</style>
 </head>
 <body>
 <script type="application/json" id="archive-meta">{meta_json}</script>
+<script type="application/json" id="archive-i18n">{i18n_json}</script>
 <div class="layout">
   <nav class="sidebar">
     <div class="controls">
-      <input type="search" id="search" placeholder="Search turns" aria-label="Search turns">
+      <input type="search" id="search" placeholder="{shell[search]}" aria-label="{shell[search]}">
       <div class="search-count" id="search-count"></div>
-      <input type="search" id="filter" placeholder="Filter contents  ( / )" aria-label="Filter contents">
+      <input type="search" id="filter" placeholder="{shell[filter]}" aria-label="{shell[filter_short]}">
       <div class="toggles">
-        <label><input type="checkbox" id="lane-thinking" checked> thinking</label>
-        <label><input type="checkbox" id="lane-tool" checked> tools</label>
-        <label><input type="checkbox" id="lane-harness" checked> harness</label>
-        <label><input type="checkbox" id="lane-system" checked> events</label>
-        <label><input type="checkbox" id="lane-subagent" checked> subagents</label>
+        <label><input type="checkbox" id="lane-thinking" checked> {shell[thinking]}</label>
+        <label><input type="checkbox" id="lane-tool" checked> {shell[tools]}</label>
+        <label><input type="checkbox" id="lane-harness" checked> {shell[harness]}</label>
+        <label><input type="checkbox" id="lane-system" checked> {shell[events]}</label>
+        <label><input type="checkbox" id="lane-subagent" checked> {shell[subagents]}</label>
       </div>
       <div class="btnrow">
-        <button id="expand-all" type="button">Expand all</button>
-        <button id="collapse-all" type="button">Collapse all</button>
-        <button id="theme-toggle" type="button">Dark theme</button>
+        <button id="expand-all" type="button">{shell[expand]}</button>
+        <button id="collapse-all" type="button">{shell[collapse]}</button>
+        <button id="theme-toggle" type="button">{shell[dark]}</button>
       </div>
     </div>
-    <h2>Session</h2>
+    <h2>{shell[session]}</h2>
     <dl class="session-info">{session_info}</dl>
-    <h2>Contents</h2>
+    <h2>{shell[contents]}</h2>
     <div class="toc">{toc_html}</div>
   </nav>
   <main class="main">
     <header class="mast">
       <h1>{title}</h1>
       <p>{subtitle}</p>
-      <p class="muted small">Timestamps are local; hover for UTC. <kbd>j</kbd>/<kbd>k</kbd> jump between
-         human turns, <kbd>/</kbd> filters the contents list, the search box hides turns that do not
-         match. Thinking, tool I/O and harness events are collapsed &mdash; use the toggles to hide a
-         lane entirely.</p>
+      <p class="muted small">{shell[note]}</p>
     </header>
     {page_nav}
     {lead_html}
@@ -3888,10 +4782,10 @@ _TEMPLATE = """<!doctype html>
 """
 
 _INDEX_TEMPLATE = """<!doctype html>
-<html lang="en">
+<html lang="{lang}">
 <head>
 <meta charset="utf-8">
-<title>Claude Code session archive</title>
+<title>{title}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 {refresh_meta}<style>{css}
 {index_css}
@@ -3900,25 +4794,25 @@ _INDEX_TEMPLATE = """<!doctype html>
 <body>
 <div class="layout"><main class="main">
 <header class="mast">
-  <h1>Claude Code session archive</h1>
+  <h1>{title}</h1>
   <p>{summary}</p>
-  <p class="muted small">Generated {generated}. &ldquo;Covered&rdquo; means the session was resumed into
-     another transcript that <em>is</em> archived, so its records live in that file.</p>
+  <p class="muted small">{note}</p>
 </header>
 <div class="archive-search">
-  <input type="search" id="archive-search" placeholder="Search every prompt across all archives ({n_prompts} prompts)"
-         aria-label="Search prompts across all archives">
+  <input type="search" id="archive-search" placeholder="{placeholder}"
+         aria-label="{aria}">
   <div class="muted small" id="search-status"></div>
   <div id="search-results" class="search-results" hidden></div>
 </div>
 <script type="application/json" id="search-index">{search_json}</script>
+<script type="application/json" id="archive-i18n">{i18n_json}</script>
 <div class="table-wrap"><table>
-<thead><tr><th class="sortable" data-i="0">status</th>
-<th class="sortable" data-i="1">activity</th>
-<th class="sortable" data-i="2">id</th>
-<th class="sortable" data-i="3">session</th>
-<th class="sortable num" data-i="4">started</th>
-<th class="sortable num sorted-desc" data-i="5">last record</th></tr></thead>
+<thead><tr><th class="sortable" data-i="0">{h_status}</th>
+<th class="sortable" data-i="1">{h_activity}</th>
+<th class="sortable" data-i="2">{h_id}</th>
+<th class="sortable" data-i="3">{h_session}</th>
+<th class="sortable num" data-i="4">{h_started}</th>
+<th class="sortable num sorted-desc" data-i="5">{h_last}</th></tr></thead>
 <tbody>{rows}</tbody>
 </table></div>
 </main></div>
@@ -3929,11 +4823,13 @@ _INDEX_TEMPLATE = """<!doctype html>
 
 _INDEX_JS = """
 (function () {
+  var I18N = {};
+  try { I18N = JSON.parse(document.getElementById('archive-i18n').textContent) || {}; } catch (e) { I18N = {}; }
   /* Activity ages decay live: recompute from data-ts once a minute. The page
      cannot see new records without regeneration (see --watch), so a session
      can only go quiet on screen, never freshly active. */
   function ageLabel(s) {
-    if (s < 90) return 'now';
+    if (s < 90) return I18N.now || 'now';
     if (s < 3600) return Math.floor(s / 60) + 'm';
     if (s < 86400) return Math.floor(s / 3600) + 'h';
     return Math.floor(s / 86400) + 'd';
@@ -3992,9 +4888,9 @@ _INDEX_JS = """
       });
       if (inTitle) sids[e.session_id] = true;
     });
-    status.textContent = total + ' matching prompt' + (total === 1 ? '' : 's') + ' in '
-      + Object.keys(sids).length + ' session' + (Object.keys(sids).length === 1 ? '' : 's')
-      + (total > 200 ? ' (first 200 shown)' : '');
+    status.textContent = (I18N.status || '{total} matching prompt(s) in {sessions} session(s)')
+      .replace('{total}', total).replace('{sessions}', Object.keys(sids).length)
+      + (total > 200 ? (I18N.first200 || ' (first 200 shown)') : '');
     out.innerHTML = hits.map(function (h) {
       return '<a class="hit" href="' + escapeHtml(h.p.href) + '"><span class="hit-meta"><code>'
         + escapeHtml(h.e.session_id.slice(0, 8)) + '</code> ' + (h.p.tag ? '<span class="rtag">' + escapeHtml(h.p.tag) + '</span> ' : '')
@@ -4082,6 +4978,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("session_id", nargs="?", help="transcript UUID (the .jsonl filename)")
     ap.add_argument("--version", action="version", version=f"transcript_archiver {VERSION}")
     ap.add_argument("--title", default=None, help="page title; defaults to the session's own ai-title")
+    ap.add_argument("--lang", default=None, choices=LANGS,
+                    help="language of the archiver's own words (headings, labels, notes, the "
+                         "index); the conversation itself is never translated. Default: "
+                         "$CLAUDE_ARCHIVE_LANG, else en")
     ap.add_argument("--out", default=None,
                     help="output path stem for a single archive (each format adds its "
                          "own extension); overrides --archive-dir naming")
@@ -4164,6 +5064,11 @@ def main(argv: list[str] | None = None) -> None:
     ap = build_parser()
     args = ap.parse_args(argv)
     CON.verbose, CON.quiet = args.verbose, args.quiet
+    lang = args.lang or os.environ.get("CLAUDE_ARCHIVE_LANG") or "en"
+    if lang not in LANGS:
+        ap.error(f"CLAUDE_ARCHIVE_LANG={lang!r} is not one of {', '.join(LANGS)}")
+    global LANG
+    LANG = lang
 
     projects_root = Path(args.projects_root)
     cowork_root = Path(args.cowork_root) if args.cowork_root else None
@@ -4248,9 +5153,9 @@ def _run(args, ap, projects_root: Path, cowork_root, archive_dir: Path, formats:
                     encoding="utf-8")
             summary_inner = (Path(args.summary_file).read_text(encoding="utf-8")
                              if args.summary_file else
-                             "<p><em>Imported from a claude.ai data export. Pass "
-                             "<code>--summary-file</code> for a hand-written "
-                             "summary.</em></p>")
+                             "<p><em>" + _("Imported from a claude.ai data export. Pass "
+                                           "<code>--summary-file</code> for a hand-written "
+                                           "summary.") + "</em></p>")
             for c in convs:
                 sid = c.get("uuid") or "claude-ai-import"
                 title = args.title or c.get("name") or sid
@@ -4279,15 +5184,15 @@ def _run(args, ap, projects_root: Path, cowork_root, archive_dir: Path, formats:
         summary_inner = Path(args.summary_file).read_text(encoding="utf-8")
     else:
         summary_inner = (
-            "<p><em>No summary provided. Write one covering Activities, Key findings, What this "
-            "allows going forward, and Generated artifacts, save it as an HTML fragment, and "
-            "re-run with <code>--summary-file</code>.</em></p>")
+            "<p><em>" + _("No summary provided. Write one covering Activities, Key findings, What "
+                          "this allows going forward, and Generated artifacts, save it as an HTML "
+                          "fragment, and re-run with <code>--summary-file</code>.") + "</em></p>")
 
     # Name the file after the transcript actually archived, not the id typed in --
     # otherwise a resumed session gets filed under the id of its own earlier half.
     naming_id = args.session_id
     if not args.no_follow_chain:
-        naming_id, _ = resolve_chain(args.session_id, sessions)
+        naming_id, _rel = resolve_chain(args.session_id, sessions)
     out_path = out_stem(args.out) if args.out else (
         archive_dir / f"{naming_id}_{slugify(title)}.html")
 

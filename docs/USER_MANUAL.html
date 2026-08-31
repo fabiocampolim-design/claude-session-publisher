@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.6.4</p>
+<p class="subtitle">transcript_archiver.py v2.7.0</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -120,6 +120,7 @@ produced</a>
 <ul>
 <li><a href="#files" id="toc-files">Files</a></li>
 <li><a href="#the-page" id="toc-the-page">The page</a></li>
+<li><a href="#language" id="toc-language">Language</a></li>
 <li><a href="#reference-tags" id="toc-reference-tags">Reference
 tags</a></li>
 <li><a href="#fidelity-report" id="toc-fidelity-report">Fidelity
@@ -359,6 +360,14 @@ combined with <code>pdf</code></td>
 <td>split the HTML into pages of N turns; page 1 keeps the summary,
 usage and fidelity sections; the sidebar links across pages</td>
 </tr>
+<tr>
+<td><code>--lang CODE</code></td>
+<td><code>$CLAUDE_ARCHIVE_LANG</code> or <code>en</code></td>
+<td><code>en</code>, <code>pt-BR</code>, <code>es</code>,
+<code>de</code>, <code>fr</code>: the language of the archiver’s own
+words in every format and in the index. The conversation is never
+translated (see §4, <em>Language</em>)</td>
+</tr>
 </tbody>
 </table>
 <h3 id="index">Index</h3>
@@ -542,6 +551,30 @@ linked</td>
 </tr>
 </tbody>
 </table>
+<h3 id="language">Language</h3>
+<p><code>--lang pt-BR|es|de|fr</code> (or the environment variable
+<code>CLAUDE_ARCHIVE_LANG</code>; the flag wins; default
+<code>en</code>) sets the language of everything the archiver itself
+writes: the page shell and its controls, the turn labels, the session
+information, the usage and cost notes, the fidelity report, the subagent
+appendix, the format notes of the text/Markdown/LaTeX outputs, and the
+index page. <code>&lt;html lang&gt;</code> and the embedded metadata
+field <code>lang</code> record the choice; the standalone LaTeX sets the
+matching polyglossia language (hyphenation) when polyglossia is
+installed, and compiles without it.</p>
+<p>The conversation is never translated. Prompts, answers, thinking,
+tool names, tool input and output, system and harness text, model names,
+titles, paths, dates (ISO) and numbers are the same bytes in every
+language — the suite renders the fixture in all five and checks that
+every conversation fragment of the English page is present verbatim in
+the others. Event badges and attachment labels are translated where
+rendered; the record-type names in the fidelity tables
+(<code>human turn</code>, <code>tool_use</code>, …) are parser
+vocabulary and stay English, as does the <code>archiver v…</code> stamp
+the index reads back. The audit log, the console
+(<code>--verbose</code>) and <code>--help</code> stay English whatever
+the language. An unknown code — on the flag or in the variable — is
+refused before anything is written.</p>
 <h3 id="reference-tags">Reference tags</h3>
 <p>Every human prompt is <code>P1, P2, …</code> and every response
 <code>R1, R2, …</code>, sequential within the document; subagent turns
@@ -597,6 +630,16 @@ subagents), expand/collapse all, <strong>theme toggle</strong> (light or
 dark, remembered per browser; follows the OS until you choose), session
 facts, contents. Keys: <code>j</code>/<code>k</code> jump between human
 turns.</p>
+<p>A <strong>safeguard refusal with model fallback</strong> (Claude Code
+writes a <code>system/model_refusal_fallback</code> record when a
+message is refused and the session continues on another model) is
+rendered as an event in every format: the badge <em>Model fallback after
+a safeguard refusal</em>, the detail
+<code>&lt;original&gt; -&gt; &lt;fallback&gt; (category: …), N message(s) retracted</code>,
+and a body stating how many of the retracted messages are absent from
+the source file. The HTML session info adds a <em>Harness
+retractions</em> row. The recap Claude Code prints when you return
+(<code>away_summary</code>) is the event <em>Away summary</em>.</p>
 <h3 id="the-index">The index</h3>
 <p><code>--index</code> scans every session on disk and marks each
 <strong>archived</strong>, <strong>stale</strong> (source has newer
@@ -722,9 +765,14 @@ files under the roots to resolve chains; the index compares uuid sets
 pairwise. Fine for hundreds of sessions; slow for thousands.</li>
 <li><strong>Platforms</strong>: developed and validated on Windows; the
 suite and a pyflakes static check run on Linux, Windows and macOS in CI.
-Neither Linux nor macOS has had a real-world run yet — cowork-root
-auto-detection and TeX font paths in particular are CI-green but
-unverified in the field.</li>
+Linux had one real-world run (2026-08-31, WSL2 Ubuntu, Python 3.14: all
+non-PDF formats of a real session, <code>--index</code>, and the loud
+failure without <code>xelatex</code>). Unverified in the field: PDF and
+TeX font paths on Linux, cowork sessions produced on Linux, and macOS
+altogether. Under WSL, reading the transcripts through
+<code>/mnt/c</code> made the scan about four times slower than natively
+(18 s versus 4 s for 281 transcripts) — keep the roots on the Linux
+side.</li>
 <li><strong>Live index decay is one-directional</strong>: a session can
 go quiet on screen but cannot become active without regeneration
 (<code>--watch</code>).</li>
@@ -735,7 +783,7 @@ and is deferred.</li>
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>280 checks against the synthetic sessions in <code>examples/</code>
+<p>392 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>

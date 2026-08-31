@@ -99,6 +99,7 @@ invalid arguments; 1 on a failed run (message on stderr).
 |---|---|---|
 | `session_id` | — | required unless `--index` / `--import-claude-ai` |
 | `--title` | session `ai-title` | drives the file slug |
+| `--lang` | `$CLAUDE_ARCHIVE_LANG` or `en` | `pt-BR`, `es`, `de`, `fr`: the archiver's own words only (labels, notes, index); the conversation is never translated |
 | `--out` | — | path **stem**; each format adds its extension |
 | `--summary-file` | placeholder | HTML fragment |
 | `--projects-root` | `~/.claude/projects` | |

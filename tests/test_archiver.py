@@ -1894,6 +1894,195 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+
+print("\n[37] --lang: the archiver's own words in pt-BR, es, de, fr; the conversation intact")
+import ast as _ast
+_src = SCRIPT.read_text(encoding="utf-8")
+check("five languages, English first",
+      getattr(ta, "LANGS", None) == ("en", "pt-BR", "es", "de", "fr"), str(getattr(ta, "LANGS", None)))
+_tables = getattr(ta, "L10N", {})
+check("a table per non-English language",
+      set(_tables) == {"pt-BR", "es", "de", "fr"}, str(sorted(_tables)))
+# Every literal the source passes through _() must be in every table; every
+# table entry must be a source literal or a parser label translated at render
+# time (a badge, a record-type name). A forgotten string would fall back to
+# English silently at runtime -- the suite is where that is caught.
+_keys = set()
+for _node in _ast.walk(_ast.parse(_src)):
+    if (isinstance(_node, _ast.Call) and isinstance(_node.func, _ast.Name)
+            and _node.func.id == "_" and _node.args
+            and isinstance(_node.args[0], _ast.Constant) and isinstance(_node.args[0].value, str)):
+        _keys.add(_node.args[0].value)
+check("the source passes at least 100 distinct strings through _()", len(_keys) >= 100, str(len(_keys)))
+_dynamic = ({lbl for _pol, lbl in ta.ATTACHMENT_POLICY.values()}
+            | {lbl for _pol, lbl in ta.SYSTEM_SUBTYPE_POLICY.values()}
+            | set(getattr(ta, "L10N_DYNAMIC_KEYS", ())))
+for _lang, _table in sorted(_tables.items()):
+    _missing = sorted(k for k in _keys if k not in _table)
+    check(f"{_lang}: every _() key is translated", not _missing, str(_missing[:5]))
+    _missing_dyn = sorted(k for k in _dynamic if k not in _table)
+    check(f"{_lang}: every parser label is translated", not _missing_dyn, str(_missing_dyn[:5]))
+    _bad = [(k, v) for k, v in _table.items()
+            if set(re.findall(r"\{(\w+)\}", k)) != set(re.findall(r"\{(\w+)\}", v))]
+    check(f"{_lang}: every translation keeps its {{fields}}", not _bad, str(_bad[:3]))
+    _dead = sorted(k for k in _table if k not in _keys and k not in _dynamic)
+    check(f"{_lang}: no translation without a source string", not _dead, str(_dead[:5]))
+
+_HTML_EN = ['class="who">Human ', '>Fidelity report<',
+            '>Session summary<', '>Usage &amp; cost<', '>Expand all<', '>Collapse all<',
+            'Timestamps are local', 'records that produced one or more turns below',
+            '<h2>Contents</h2>', 'placeholder="Search turns"',
+            '<dt>Started</dt>', '<dt>Archived at</dt>', '<h4>Caveats</h4>']
+_TEXT_EN = ["FIDELITY REPORT", "[ HUMAN -", "records that produced one or more turns below",
+            "Every turn in the HTML archive is present here"]
+_MD_EN = ["## Fidelity report", "## Human -", "- records that produced one or more turns below"]
+_TEX_EN = ["\\section*{Fidelity report}", "{HUMAN -", "records that produced one or more turns below"]
+_POLYGLOSSIA = {"pt-BR": "\\setdefaultlanguage[variant=brazilian]{portuguese}",
+                "es": "\\setdefaultlanguage{spanish}", "de": "\\setdefaultlanguage{german}",
+                "fr": "\\setdefaultlanguage{french}"}
+
+
+def _page(d):
+    return next(f for f in d.glob(f"{SAMPLE}_*.html"))
+
+
+def _content_fragments(t):
+    """What the conversation itself puts on the HTML page, as rendered."""
+    out = []
+    for turn in t.turns:
+        k = turn["kind"]
+        if k in ("human", "assistant", "thinking") and turn.get("html"):
+            out.append(turn["html"])
+        elif k == "tool":
+            out.append(ta.esc(ta.pretty_tool_input(turn["input"])))
+            if turn.get("output_text"):
+                out.append(ta.esc(turn["output_text"]))
+    return out
+
+
+_t = ta.parse_transcript(source_of(SAMPLE), 16384)
+_frags = _content_fragments(_t)
+_humans = [x["text"].rstrip() for x in _t.turns if x["kind"] == "human"]
+_tool_out = [x["output_text"] for x in _t.turns if x["kind"] == "tool" and x.get("output_text")]
+check("the fixture has content to compare", len(_frags) >= 8 and len(_humans) >= 2 and _tool_out,
+      f"{len(_frags)} fragments, {len(_humans)} human turns")
+_dirs = {}
+try:
+    for _lang in ("en", "pt-BR", "es", "de", "fr"):
+        _d = pathlib.Path(tempfile.mkdtemp(prefix=f"ta-lang-{_lang}-"))
+        _dirs[_lang] = _d
+        _p = run(SAMPLE, "html,text,markdown,latex", _d, ["--lang", _lang])
+        check(f"{_lang}: export exits 0", _p.returncode == 0, _p.stderr[-300:])
+        if _p.returncode != 0:
+            continue
+        _html = _page(_d).read_text(encoding="utf-8")
+        _txt = _page(_d).with_suffix(".txt").read_text(encoding="utf-8")
+        _md = _page(_d).with_suffix(".md").read_text(encoding="utf-8")
+        _tex = _page(_d).with_suffix(".tex").read_text(encoding="utf-8")
+        check(f"{_lang}: <html lang> names the language", f'<html lang="{_lang}">' in _html, "missing")
+        _meta = json.loads(re.search(r'id="archive-meta">(.*?)</script>', _html, re.S).group(1)
+                           .replace("<\\/", "</"))
+        check(f"{_lang}: the embedded metadata records the language", _meta.get("lang") == _lang, str(_meta.get("lang")))
+        if _lang == "en":
+            # The marker lists must be live: every one is on the English page.
+            for _name, _blob, _marks in (("HTML", _html, _HTML_EN), ("text", _txt, _TEXT_EN),
+                                         ("Markdown", _md, _MD_EN), ("LaTeX", _tex, _TEX_EN)):
+                _gone = [m for m in _marks if m not in _blob]
+                check(f"en: every {_name} marker is on the English output", not _gone, str(_gone))
+            check("en: the LaTeX carries no polyglossia language",
+                  "\\setdefaultlanguage" not in _tex, "found")
+            _en_html, _en_tex = _html, _tex
+            continue
+        for _name, _blob, _marks in (("HTML", _html, _HTML_EN), ("text", _txt, _TEXT_EN),
+                                     ("Markdown", _md, _MD_EN), ("LaTeX", _tex, _TEX_EN)):
+            _left = [m for m in _marks if m in _blob]
+            check(f"{_lang}: no English chrome survives in the {_name}", not _left, str(_left))
+        # The conversation itself is untouched: every rendered fragment of the
+        # English page is on this one, byte for byte.
+        _lost = [f[:60] for f in _frags if f not in _html]
+        check(f"{_lang}: every conversation fragment of the English page is present verbatim",
+              not _lost, str(_lost[:3]))
+        # The text format indents every tool-output line by four spaces, so
+        # the output is compared line by line; a human turn is one block.
+        check(f"{_lang}: human turns and tool output are verbatim in the text format",
+              all(h in _txt for h in _humans)
+              and all(("    " + ln) in _txt for o in _tool_out for ln in o.splitlines()), "a turn changed")
+        check(f"{_lang}: human turns are verbatim in the Markdown",
+              all(h in _md for h in _humans), "a turn changed")
+        _vb = re.compile(r"\\begin\{Verbatim\}.*?\\end\{Verbatim\}", re.S)
+        check(f"{_lang}: the LaTeX verbatim blocks equal the English ones",
+              _vb.findall(_tex) == _vb.findall(_en_tex),
+              f"{len(_vb.findall(_tex))} vs {len(_vb.findall(_en_tex))}")
+        check(f"{_lang}: the LaTeX sets its polyglossia language behind an existence guard",
+              _POLYGLOSSIA[_lang] in _tex and "\\IfFileExists{polyglossia.sty}" in _tex, "missing")
+        check(f"{_lang}: the audit log stays English",
+              any("outcome: ok" in f.read_text(encoding="utf-8") and "wrote " in f.read_text(encoding="utf-8")
+                  for f in (_d / "logs").glob("*.log")), "no English log")
+        check(f"{_lang}: the console stays English", "wrote " in _p.stdout, _p.stdout[-200:])
+
+    if shutil.which("xelatex"):
+        _p = run(SAMPLE, "pdf", _dirs["pt-BR"], ["--lang", "pt-BR", "--tool-output", "off"])
+        _pdf = _page(_dirs["pt-BR"]).with_suffix(".pdf")
+        check("pt-BR: the PDF compiles", _p.returncode == 0 and _pdf.exists() and pdf_page_count(_pdf) >= 1,
+              _p.stderr[-300:])
+    else:
+        skip("pt-BR: the PDF compiles", "no xelatex")
+
+    # The index: its own words in the language asked for, and its prompt search
+    # reads prompts back from archives written in any language.
+    _cmd = [sys.executable, str(SCRIPT), "--index", "--archive-dir", str(_dirs["pt-BR"]),
+            "--projects-root", str(ROOT)]
+    _p = subprocess.run(_cmd + ["--lang", "pt-BR"], capture_output=True, text=True, cwd=str(SCRIPT.parent))
+    _idx = (_dirs["pt-BR"] / "index.html").read_text(encoding="utf-8") if _p.returncode == 0 else ""
+    check("pt-BR index: exits 0 and names its language", _p.returncode == 0 and '<html lang="pt-BR">' in _idx,
+          _p.stderr[-300:])
+    check("pt-BR index: no English chrome survives",
+          _idx and "Claude Code session archive" not in _idx and ">last record</th>" not in _idx
+          and ">not archived<" not in _idx and "Generated " not in _idx, "found")
+    _sidx = json.loads(re.search(r'id="search-index">(.*?)</script>', _idx, re.S).group(1)
+                       .replace("<\\/", "</")) if _idx else []
+    _found = sum(len(e["prompts"]) for e in _sidx)
+    check("pt-BR index: the prompt search finds the prompts of a pt-BR archive",
+          _found >= len(_humans), f"{_found} prompts indexed, {len(_humans)} human turns")
+    _p = subprocess.run(_cmd, capture_output=True, text=True, cwd=str(SCRIPT.parent))
+    _idx = (_dirs["pt-BR"] / "index.html").read_text(encoding="utf-8") if _p.returncode == 0 else ""
+    _sidx = json.loads(re.search(r'id="search-index">(.*?)</script>', _idx, re.S).group(1)
+                       .replace("<\\/", "</")) if _idx else []
+    check("en index over a pt-BR archive: the prompt search still finds its prompts",
+          '<html lang="en">' in _idx and sum(len(e["prompts"]) for e in _sidx) >= len(_humans),
+          f"{sum(len(e['prompts']) for e in _sidx)} prompts")
+
+    # Selection: --lang, else CLAUDE_ARCHIVE_LANG, else English; unknown values refused.
+    _d = pathlib.Path(tempfile.mkdtemp(prefix="ta-lang-env-"))
+    _dirs["env"] = _d
+    _env = dict(os.environ, CLAUDE_ARCHIVE_LANG="es")
+    _cmd = [sys.executable, str(SCRIPT), SAMPLE, "--format", "html", "--archive-dir", str(_d),
+            "--projects-root", str(ROOT)]
+    _p = subprocess.run(_cmd, capture_output=True, text=True, cwd=str(SCRIPT.parent), env=_env)
+    check("CLAUDE_ARCHIVE_LANG selects the language when --lang is absent",
+          _p.returncode == 0 and '<html lang="es">' in _page(_d).read_text(encoding="utf-8"), _p.stderr[-200:])
+    _p = subprocess.run(_cmd + ["--lang", "fr"], capture_output=True, text=True, cwd=str(SCRIPT.parent), env=_env)
+    check("--lang overrides CLAUDE_ARCHIVE_LANG",
+          _p.returncode == 0 and '<html lang="fr">' in _page(_d).read_text(encoding="utf-8"), _p.stderr[-200:])
+    _p = subprocess.run(_cmd + ["--lang", "xx"], capture_output=True, text=True, cwd=str(SCRIPT.parent))
+    check("an unknown --lang is refused before anything is written",
+          _p.returncode == 2 and "invalid choice" in _p.stderr, f"rc={_p.returncode}")
+    _env = dict(os.environ, CLAUDE_ARCHIVE_LANG="xx")
+    _p = subprocess.run(_cmd, capture_output=True, text=True, cwd=str(SCRIPT.parent), env=_env)
+    check("an unknown CLAUDE_ARCHIVE_LANG is refused, not silently English",
+          _p.returncode == 2 and "CLAUDE_ARCHIVE_LANG" in _p.stderr, f"rc={_p.returncode} {_p.stderr[-200:]}")
+finally:
+    for _d in _dirs.values():
+        shutil.rmtree(_d, ignore_errors=True)
+_readme_l = (HERE.parent / "README.md").read_text(encoding="utf-8", errors="replace")
+_manual_l = (HERE.parent / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8", errors="replace")
+_changelog_l = (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8", errors="replace")
+check("README documents --lang and the four languages",
+      "--lang" in _readme_l and all(x in _readme_l for x in ("pt-BR", "es", "de", "fr")), "missing")
+check("USER_MANUAL documents --lang, CLAUDE_ARCHIVE_LANG and what stays untranslated",
+      "--lang" in _manual_l and "CLAUDE_ARCHIVE_LANG" in _manual_l and "verbatim" in _manual_l, "missing")
+check("CHANGELOG has the 2.7.0 entry", "## 2.7.0" in _changelog_l, "missing")
+
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
     skip("no file appeared in CLAUDE_ARCHIVE_DIR during the suite",

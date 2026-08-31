@@ -3,6 +3,31 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.0 — 2026-08-31
+
+**Added**
+- **`--lang pt-BR|es|de|fr`** (or `CLAUDE_ARCHIVE_LANG`): the archiver's own
+  words — page shell, turn labels, session info, usage and cost notes, the
+  fidelity report, the subagent appendix, the index page — in Brazilian
+  Portuguese, Spanish, German or French, in every format. The conversation
+  itself is never translated: prompts, answers, thinking, tool names, tool
+  input and output, system text, model names, titles and paths are the same
+  bytes whatever the language, and the audit log, the console and `--help`
+  stay English. `<html lang>` and the embedded metadata (`lang`) record the
+  choice; the standalone LaTeX sets the matching polyglossia language when
+  polyglossia is installed. Parser labels (event badges) are English
+  identifiers at parse time and translated where rendered. An unknown value,
+  on the flag or in the variable, is refused before anything is written.
+- The suite scans the source for every string passed through `_()` and fails
+  on any key missing from any language, any translation whose `{fields}`
+  differ from its key, and any table entry with no source string; renders the
+  fixture in all five languages and checks that no English chrome survives in
+  the HTML, text, Markdown or LaTeX while every conversation fragment of the
+  English page is present byte for byte; compiles the pt-BR PDF; builds the
+  index in pt-BR and confirms its prompt search reads prompts back from
+  archives written in any language. The index's prompt regex no longer
+  depends on the English turn label.
+
 ## 2.6.6 — 2026-08-31
 
 **Fixed**
