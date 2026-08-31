@@ -317,9 +317,13 @@ These are the honest edges. Each is stated on the page where it applies.
   chains; the index compares uuid sets pairwise. Fine for hundreds of
   sessions; slow for thousands.
 - **Platforms**: developed and validated on Windows; the suite and a pyflakes
-  static check run on Linux, Windows and macOS in CI. Neither Linux nor macOS
-  has had a real-world run yet — cowork-root auto-detection and TeX font paths
-  in particular are CI-green but unverified in the field.
+  static check run on Linux, Windows and macOS in CI. Linux had one
+  real-world run (2026-08-31, WSL2 Ubuntu, Python 3.14: all non-PDF formats
+  of a real session, `--index`, and the loud failure without `xelatex`).
+  Unverified in the field: PDF and TeX font paths on Linux, cowork sessions
+  produced on Linux, and macOS altogether. Under WSL, reading the transcripts
+  through `/mnt/c` made the scan about four times slower than natively
+  (18 s versus 4 s for 281 transcripts) — keep the roots on the Linux side.
 - **Live index decay is one-directional**: a session can go quiet on screen
   but cannot become active without regeneration (`--watch`).
 - **Cross-archive search covers prompts, not responses** (and the first 400

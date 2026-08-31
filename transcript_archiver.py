@@ -3138,7 +3138,7 @@ def compile_pdf(tex_path):
 # The export carries no usage data and no model name; the page says so.
 # ---------------------------------------------------------------------------
 
-CLAUDE_AI_MODEL = "claude.ai (model not in export)"
+WEB_EXPORT_MODEL = "claude.ai (model not in export)"
 
 
 def claude_ai_records(conv: dict) -> list[dict]:
@@ -3209,7 +3209,7 @@ def claude_ai_records(conv: dict) -> list[dict]:
                 return
             rec = {**base, "uuid": f"{base['uuid']}-p{part}" if part else base["uuid"],
                    "type": rtype,
-                   "message": ({"role": "assistant", "model": CLAUDE_AI_MODEL,
+                   "message": ({"role": "assistant", "model": WEB_EXPORT_MODEL,
                                 "content": list(kind_blocks)} if rtype == "assistant"
                                else {"role": "user", "content": list(kind_blocks)})}
             recs.append(rec)

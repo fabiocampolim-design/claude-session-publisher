@@ -145,8 +145,11 @@ document, use this one.
 Gaps worth closing:
 
 - **First-class Linux and macOS support.** CI runs the suite on Linux and
-  macOS, but both platforms need real-world verification: cowork-root
-  auto-detection, TeX font paths, and archives of sessions produced there.
+  macOS. Linux had its first real-world run on 2026-08-31 (WSL2 Ubuntu,
+  Python 3.14): HTML, text, Markdown and LaTeX of a real session, `--index`
+  over 88 sessions, and the no-`xelatex` failure path all behaved as on
+  Windows. Still unverified in the field: PDF compilation and TeX font paths
+  on Linux, cowork sessions produced on Linux, and everything on macOS.
   Reports from Linux/Mac users are especially welcome.
 - **Scale.** Every run re-reads every transcript under the roots to resolve
   chains, and the index compares uuid sets pairwise — fine for hundreds of
@@ -333,7 +336,8 @@ survival testing. Two more days of review-driven releases followed (2.4 →
 pass, survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded — the last of them a table that
 compiled cleanly while dropping its rows), bringing the history to
-38 commits.
+38 commits; the housekeeping that followed — keeping the vendored conformance
+checker byte-identical to the publishing playbook — brings it to 43 commits.
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
