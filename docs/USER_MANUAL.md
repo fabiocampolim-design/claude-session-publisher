@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.7.0"
+subtitle: "transcript_archiver.py v2.7.1"
 ---
 
 # claude-session-publisher — User Manual
@@ -163,8 +163,12 @@ itself writes: the page shell and its controls, the turn labels, the session
 information, the usage and cost notes, the fidelity report, the subagent
 appendix, the format notes of the text/Markdown/LaTeX outputs, and the index
 page. `<html lang>` and the embedded metadata field `lang` record the choice;
-the standalone LaTeX sets the matching polyglossia language (hyphenation)
-when polyglossia is installed, and compiles without it.
+the standalone LaTeX loads polyglossia when it is installed, keeps **English as
+the default language** — the conversation's prose is hyphenated and spaced as
+English, so a French page never inserts spaces before Claude's `!` — and
+wraps only the archiver's own words in the document language. A `--fragment`
+sets those words with accent macros (`\'{e}`, `\"{a}`, `\ss{}`) so pdflatex
+prints them intact, and never counts them in the fragment's drop-note.
 
 The conversation is never translated. Prompts, answers, thinking, tool
 names, tool input and output, system and harness text, model names, titles,
@@ -362,7 +366,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-392 checks against the synthetic sessions in `examples/` (no real transcript
+417 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

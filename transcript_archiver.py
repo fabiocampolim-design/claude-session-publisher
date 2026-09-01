@@ -57,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.0"
+VERSION = "2.7.1"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -92,6 +92,7 @@ _TEX_LANGUAGE = {
     "pt-BR": "[variant=brazilian]{portuguese}",
     "es": "{spanish}", "de": "{german}", "fr": "{french}",
 }
+_TEX_LANGNAME = {"pt-BR": "portuguese", "es": "spanish", "de": "german", "fr": "french"}
 
 _L10N_ROWS = [
     # (english, pt-BR, es, de, fr)
@@ -229,6 +230,32 @@ _L10N_ROWS = [
      "Modelo de respaldo tras un rechazo de seguridad", "Modellwechsel nach einer Schutzverweigerung",
      "Modèle de repli après un refus de sécurité"),
     ("Away summary", "Resumo de ausência", "Resumen de ausencia", "Abwesenheitszusammenfassung", "Résumé d'absence"),
+    ("Harness nudge", "Lembrete do harness", "Aviso del harness", "Harness-Hinweis", "Rappel du harness"),
+    ("Local command output", "Saída de comando local", "Salida de comando local",
+     "Ausgabe eines lokalen Befehls", "Sortie de commande locale"),
+    ("Local command caveat", "Ressalva de comando local", "Advertencia de comando local",
+     "Vorbehalt zu einem lokalen Befehl", "Réserve de commande locale"),
+    ("Prompt-submit hook", "Hook de envio de prompt", "Hook de envío de prompt",
+     "Hook beim Absenden des Prompts", "Hook d'envoi de prompt"),
+    ("Loop heartbeat", "Pulso do loop", "Latido del bucle", "Schleifen-Herzschlag", "Battement de boucle"),
+    ("Skill already loaded", "Skill já carregada", "Skill ya cargada", "Skill bereits geladen", "Skill déjà chargée"),
+    ("Interrupted by user", "Interrompido pelo usuário", "Interrumpido por el usuario",
+     "Vom Benutzer unterbrochen", "Interrompu par l'utilisateur"),
+    ("Image scaling note", "Nota de redimensionamento de imagem", "Nota de escalado de imagen",
+     "Hinweis zur Bildskalierung", "Note de mise à l'échelle d'image"),
+    ("{n} finding(s)", "{n} achado(s)", "{n} hallazgo(s)", "{n} Befund(e)", "{n} constat(s)"),
+    ("{n} item(s)", "{n} item(ns)", "{n} elemento(s)", "{n} Eintrag/Einträge", "{n} élément(s)"),
+    ("{n} message(s) were retracted by the harness after this refusal",
+     "{n} mensagem(ns) foram retratadas pelo harness após esta recusa",
+     "{n} mensaje(s) fueron retractados por el harness tras este rechazo",
+     "{n} Nachricht(en) wurden vom Harness nach dieser Verweigerung zurückgenommen",
+     "{n} message(s) ont été retirés par le harness après ce refus"),
+    ("; {n} of them are not in the source transcript", "; {n} delas não estão na transcrição de origem",
+     "; {n} de ellos no están en la transcripción de origen", "; {n} davon fehlen im Quelltranskript",
+     " ; {n} d'entre eux ne sont pas dans la transcription source"),
+    (". The conversation continued on {model}.", ". A conversa continuou em {model}.",
+     ". La conversación continuó en {model}.", ". Das Gespräch wurde auf {model} fortgesetzt.",
+     ". La conversation s'est poursuivie sur {model}."),
     # -- session info ---------------------------------------------------
     ("Session ID", "ID da sessão", "ID de la sesión", "Sitzungs-ID", "ID de session"),
     ("Requested", "Solicitada", "Solicitada", "Angefordert", "Demandée"),
@@ -431,29 +458,6 @@ _L10N_ROWS = [
     ("Totals include {n} subagent transcript(s).", "Os totais incluem {n} transcrição(ões) de subagente.",
      "Los totales incluyen {n} transcripción(es) de subagente.", "Die Summen enthalten {n} Subagenten-Transkript(e).",
      "Les totaux incluent {n} transcription(s) de sous-agent."),
-    ("Reported cost: ${usd} reported by Claude Code's own meter (cost-state records) over {runs} run(s) "
-     "of this session",
-     "Custo informado: ${usd} informados pelo medidor do próprio Claude Code (registros cost-state) em "
-     "{runs} execução(ões) desta sessão",
-     "Costo informado: ${usd} informados por el medidor propio de Claude Code (registros cost-state) en "
-     "{runs} ejecución(es) de esta sesión",
-     "Gemeldete Kosten: ${usd} von Claude Codes eigenem Zähler (cost-state-Datensätze) über {runs} "
-     "Lauf/Läufe dieser Sitzung gemeldet",
-     "Coût déclaré : ${usd} déclarés par le compteur propre de Claude Code (enregistrements cost-state) "
-     "sur {runs} exécution(s) de cette session"),
-    (". This session began before its first metered run ({first}); spend before that is not covered, "
-     "so the list-price figure is the estimate for the whole session.",
-     ". Esta sessão começou antes da primeira execução medida ({first}); o gasto anterior não está "
-     "coberto, portanto o valor a preço de tabela é a estimativa para a sessão inteira.",
-     ". Esta sesión comenzó antes de su primera ejecución medida ({first}); el gasto anterior no está "
-     "cubierto, así que la cifra a precio de lista es la estimación de toda la sesión.",
-     ". Diese Sitzung begann vor ihrem ersten gemessenen Lauf ({first}); Ausgaben davor sind nicht "
-     "erfasst, daher ist der Listenpreis-Wert die Schätzung für die ganze Sitzung.",
-     ". Cette session a commencé avant sa première exécution mesurée ({first}) ; la dépense antérieure "
-     "n'est pas couverte, le chiffre au prix catalogue est donc l'estimation de toute la session."),
-    (". The meter covers the whole session.", ". O medidor cobre a sessão inteira.",
-     ". El medidor cubre toda la sesión.", ". Der Zähler erfasst die ganze Sitzung.",
-     ". Le compteur couvre toute la session."),
     # -- fidelity report ------------------------------------------------
     ("records that produced one or more turns below", "registros que produziram um ou mais turnos abaixo",
      "registros que produjeron uno o más turnos abajo", "Datensätze, die unten einen oder mehrere Beiträge ergaben",
@@ -1335,9 +1339,9 @@ def describe_tool(name: str, inp: dict) -> tuple[str, str]:
         qs = inp.get("questions") or []
         return name, truncate("; ".join(q.get("question", "") for q in qs))
     if name == "ReportFindings":
-        return name, f"{len(inp.get('findings') or [])} finding(s)"
+        return name, _("{n} finding(s)").format(n=len(inp.get("findings") or []))
     if name == "TodoWrite":
-        return name, f"{len(inp.get('todos') or [])} item(s)"
+        return name, _("{n} item(s)").format(n=len(inp.get("todos") or []))
     if name.startswith("mcp__"):
         parts = name.split("__")
         short = parts[-1]
@@ -2002,9 +2006,10 @@ def parse_transcript(path: Path, max_tool_output: int) -> Transcript:
                 if gone:
                     detail += f", {len(gone)} message(s) retracted"
                     body = ((body + "\n\n") if body else "") + (
-                        f"{len(gone)} message(s) were retracted by the harness after this refusal"
-                        + (f"; {len(absent)} of them are not in the source transcript" if absent else "")
-                        + f". The conversation continued on {fb}.")
+                        _("{n} message(s) were retracted by the harness after this refusal").format(n=len(gone))
+                        + (_("; {n} of them are not in the source transcript").format(n=len(absent))
+                           if absent else "")
+                        + _(". The conversation continued on {model}.").format(model=fb))
                 t.retractions.append({"ts": ts, "from": orig, "to": fb, "category": cat,
                                       "retracted": len(gone), "absent": len(absent),
                                       "refused": obj.get("refusedUserMessageUuid")})
@@ -2201,25 +2206,30 @@ def reported_cost(t: Transcript, started: datetime.datetime | None = None) -> di
     }
 
 
+def reported_cost_html(rc: dict) -> str:
+    """The reported-cost paragraph (inner HTML): the meter's figure, what it
+    covers, and the floor caveat. The one phrasing every format states."""
+    return (
+        _("<b>Reported cost</b> is Claude Code's own meter (<code>cost-state</code> records): "
+          "${usd} reported by Claude Code over {runs} run(s) of this session").format(
+              usd=f'{rc["usd"]:,.2f}', runs=rc["runs"])
+        + (_("; {added} lines added, {removed} removed by tools").format(
+            added=f'{rc["lines_added"]:,}', removed=f'{rc["lines_removed"]:,}')
+           if rc["lines_added"] or rc["lines_removed"] else "")
+        + _(". The meter restarts on every resume and only runs on Claude Code &ge; 2.1.9x write it")
+        + (_(" &mdash; <b>this session began before its first metered run ({first}); spend "
+             "before that is not covered</b>, so the list-price estimate is the figure for the "
+             "whole session.").format(first=fmt_local(rc["first_start"]))
+           if rc["partial"] else
+           _(", and here the meter covers the whole session."))
+        + (_(" Claude Code flagged a model it could not price; the reported total is a floor.")
+           if rc["unknown_model_cost"] else ""))
+
+
 def reported_cost_note(rc: dict | None) -> str:
-    """One plain sentence for the text, Markdown and LaTeX formats -- the same
-    facts the HTML usage note states, so no format is silent about coverage."""
-    if not rc:
-        return ""
-    s = _("Reported cost: ${usd} reported by Claude Code's own meter (cost-state records) "
-          "over {runs} run(s) of this session").format(usd=f"{rc['usd']:,.2f}", runs=rc["runs"])
-    if rc["lines_added"] or rc["lines_removed"]:
-        s += _("; {added} lines added, {removed} removed by tools").format(
-            added=f"{rc['lines_added']:,}", removed=f"{rc['lines_removed']:,}")
-    if rc["partial"]:
-        s += _(". This session began before its first metered run ({first}); spend before "
-               "that is not covered, so the list-price figure is the estimate for the whole "
-               "session.").format(first=fmt_local(rc["first_start"]))
-    else:
-        s += _(". The meter covers the whole session.")
-    if rc["unknown_model_cost"]:
-        s += _(" Claude Code flagged a model it could not price; the reported total is a floor.")
-    return s
+    """The same paragraph flattened, for the text, Markdown and LaTeX formats
+    -- one family of sentences, so no format can drift from the HTML."""
+    return html_fragment_to_text(reported_cost_html(rc)) if rc else ""
 
 
 def usage_table(t: Transcript, on: datetime.date,
@@ -2292,23 +2302,7 @@ def usage_table(t: Transcript, on: datetime.date,
             models=esc(", ".join(sorted(set(unpriced))))) if unpriced else "")
         + "</p>")
     if rc:
-        note += (
-            '<p class="muted small">'
-            + _("<b>Reported cost</b> is Claude Code's own meter (<code>cost-state</code> records): "
-                "${usd} reported by Claude Code over {runs} run(s) of this session").format(
-                    usd=f'{rc["usd"]:,.2f}', runs=rc["runs"])
-            + (_("; {added} lines added, {removed} removed by tools").format(
-                added=f'{rc["lines_added"]:,}', removed=f'{rc["lines_removed"]:,}')
-               if rc["lines_added"] or rc["lines_removed"] else "")
-            + _(". The meter restarts on every resume and only runs on Claude Code &ge; 2.1.9x write it")
-            + (_(" &mdash; <b>this session began before its first metered run ({first}); spend "
-                 "before that is not covered</b>, so the list-price estimate is the figure for the "
-                 "whole session.").format(first=fmt_local(rc["first_start"]))
-               if rc["partial"] else
-               _(", and here the meter covers the whole session."))
-            + (_(" Claude Code flagged a model it could not price; the reported total is a floor.")
-               if rc["unknown_model_cost"] else "")
-            + '</p>')
+        note += '<p class="muted small">' + reported_cost_html(rc) + '</p>'
     # A session with no assistant response at all (opened, never answered) leaves
     # `totals` empty; callers index these keys directly, so seed them.
     out = {k: 0 for k in ("requests", "input", "output", "cache_read",
@@ -3193,6 +3187,34 @@ _TEX_SPECIALS = {"\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "$": r"\$",
                  "_": r"\_", "~": r"\textasciitilde{}", "%": r"\%"}
 
 
+_TEX_ACCENT = {"\u0301": "'", "\u0300": "`", "\u0302": "^", "\u0303": "~",
+               "\u0308": '"', "\u0327": "c"}
+_TEX_LIGATURE = {"ß": "\\ss{}", "œ": "\\oe{}", "Œ": "\\OE{}", "æ": "\\ae{}", "Æ": "\\AE{}",
+                 "ª": "\\textordfeminine{}", "º": "\\textordmasculine{}"}
+
+
+def tex_accents(s: str) -> str:
+    """Accented Latin letters as accent macros (\\'{e}, \\"{a}, \\c{c}, \\ss{}),
+    so the archiver's own words survive pdflatex unchanged; anything else
+    above ASCII is transliterated without touching the caller's tally.
+    Applied after escaping: the macros it emits must not be escaped again."""
+    out = []
+    for ch in s:
+        if ord(ch) < 0x80:
+            out.append(ch)
+            continue
+        if ch in _TEX_LIGATURE:
+            out.append(_TEX_LIGATURE[ch])
+            continue
+        d = unicodedata.normalize("NFD", ch)
+        if len(d) == 2 and d[1] in _TEX_ACCENT and ord(d[0]) < 0x80:
+            m = _TEX_ACCENT[d[1]]
+            out.append("\\c{" + d[0] + "}" if m == "c" else "\\" + m + "{" + d[0] + "}")
+            continue
+        out.append(transliterate(ch, Counter(), verbatim=False))
+    return "".join(out)
+
+
 def strip_ansi(s: str) -> str:
     return _ANSI_RE.sub("", s)
 
@@ -3247,7 +3269,9 @@ def tex_inline(s: str, tally, neutral: bool = False) -> str:
     if neutral:
         s = transliterate(s, tally, verbatim=False)
     s = s.replace("\\textbackslash{}", "\\textbackslash{}\\allowbreak{}")
-    s = re.sub(r"(?<=[/_])(?=[^\s/_]{6})", lambda m: "\\allowbreak{}", s)
+    # Never inside math: a transliterated subscript is $_{12}$, and an
+    # \allowbreak between the "_" and its brace stops pdflatex.
+    s = re.sub(r"(?<=[/_])(?!\{)(?=[^\s/_]{6})", lambda m: "\\allowbreak{}", s)
     s = re.sub(r"`([^`]+)`", r"\\texttt{\1}", s)
     s = re.sub(r"\*\*([^*]+)\*\*", r"\\textbf{\1}", s)
     s = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"\\emph{\1}", s)
@@ -3832,6 +3856,30 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
     def md(x):
         return md_to_tex(x, tally, neutral)
 
+    def chrome(x, protect=False):
+        """The archiver's own words -- a heading, a note, a label.
+
+        Never counted in the drop-note (they are not conversation), set as
+        accent macros in a fragment (pdflatex has no idea what "é" is), and
+        in a standalone wrapped in the document language so polyglossia
+        hyphenates and spaces them by its rules while the conversation keeps
+        the default language, English. `protect` for moving arguments."""
+        s = tex_inline(x, Counter(), False)
+        if neutral:
+            return tex_accents(s)
+        if LANG in _TEX_LANGNAME:
+            return ("\\protect" if protect else "") + "\\text" + _TEX_LANGNAME[LANG] + "{" + s + "}"
+        return s
+
+    def clabel(x):
+        """A box title or table label: chrome without the language wrapper."""
+        s = tex_inline(x, Counter(), False)
+        return tex_accents(s) if neutral else s
+
+    def heading(x):
+        return ("\\section*{" + chrome(x) + "}\n\\addcontentsline{toc}{section}{"
+                + chrome(x, protect=True) + "}\n")
+
     def esc(x):
         """Escape a bare string -- a turn label, badge or id.
 
@@ -3852,10 +3900,14 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
         if LANG in _TEX_LANGUAGE:
             # Hyphenation and typographic conventions of the document language;
             # only when polyglossia is installed, so a lean TeX still compiles.
+            # The conversation is set in the default language, English; only
+            # the archiver's own words (\text<lang>{...}) switch. Without
+            # polyglossia the wrapper is defined as the identity.
             pre = pre.replace(
                 "\\usepackage{fontspec}\n",
                 "\\usepackage{fontspec}\n\\IfFileExists{polyglossia.sty}{\\usepackage{polyglossia}"
-                "\\setdefaultlanguage" + _TEX_LANGUAGE[LANG] + "}{}\n", 1)
+                "\\setdefaultlanguage{english}\\setotherlanguage" + _TEX_LANGUAGE[LANG]
+                + "}{\\newcommand{\\text" + _TEX_LANGNAME[LANG] + "}[1]{#1}}\n", 1)
         B.append(pre)
         B.append("\\title{" + inl(ctx["title"]) + "}\n\\date{}\n")
         B.append("\\begin{document}\n\\maketitle\n")
@@ -3863,28 +3915,25 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
         B.append(inl(ctx["subtitle"]) + "\\end{center}\n")
         B.append("\\tableofcontents\n\\newpage\n")
     if ctx["summary_text"]:
-        h = inl(_("Session summary"))
-        B.append("\\section*{" + h + "}\n\\addcontentsline{toc}{section}{" + h + "}\n")
+        B.append(heading(_("Session summary")))
         B.append(md(ctx["summary_text"]))
-    h = inl(_("Fidelity report"))
-    B.append("\\section*{" + h + "}\n\\addcontentsline{toc}{section}{" + h + "}\n")
+    B.append(heading(_("Fidelity report")))
     B.append("\\begin{tabular}{lr}\n\\toprule\n")
-    for label, n in fidelity_lines(t):
-        B.append(esc(label) + " & " + format(n, ",") + " \\\\\n")
+    for lbl, n in fidelity_lines(t):
+        B.append(clabel(lbl) + " & " + format(n, ",") + " \\\\\n")
     B.append("\\multicolumn{2}{l}{archiver v" + esc(VERSION) + "} \\\\\n")
     B.append("\\bottomrule\n\\end{tabular}\n\n")
     n_tools = sum(1 for x in t.turns if x["kind"] == "tool")
     if ctx.get("cost_note"):
-        B.append(inl(ctx["cost_note"]) + "\n\n")
-    B.append(inl(_format_note(tool_output, n_tools)) + "\n\n")
+        B.append(chrome(ctx["cost_note"]) + "\n\n")
+    B.append(chrome(_format_note(tool_output, n_tools)) + "\n\n")
     # The drop-note's numbers are only known once the whole body is rendered,
     # so reserve a slot and assign it afterwards. Filling it by string
     # replacement over the finished source once clobbered a transcript that
     # itself contained the placeholder text.
     B.append("")
     dropnote_slot = len(B) - 1
-    h = inl(_("Transcript"))
-    B.append("\\section*{" + h + "}\n\\addcontentsline{toc}{section}{" + h + "}\n")
+    B.append(heading(_("Transcript")))
     def box(env, title, inner):
         return ("\\begin{" + env + "}{" + title + "}\n" + inner
                 + "\\end{" + env + "}\n")
@@ -3899,7 +3948,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
         if len(boxes) > 1:
             tally["split_boxes"] += 1
         for k, pieces in enumerate(boxes, 1):
-            part = inl(_(" (part {k}/{n})").format(k=k, n=len(boxes))) if len(boxes) > 1 else ""
+            part = clabel(_(" (part {k}/{n})").format(k=k, n=len(boxes))) if len(boxes) > 1 else ""
             B.append(box(env, label + part + stamp(ts),
                          _set_pieces(pieces, tally, neutral)
                          + (tail if k == len(boxes) else "")))
@@ -3923,18 +3972,18 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
             kind = turn["kind"]
             if kind == "human":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
-                verbatim_boxes("humanturn", esc(_("HUMAN")) + tg, ts, turn["text"].rstrip())
+                verbatim_boxes("humanturn", clabel(_("HUMAN")) + tg, ts, turn["text"].rstrip())
             elif kind == "assistant":
                 tg = (" - " + esc(turn["tag"])) if turn.get("tag") else ""
                 md_boxes("claudeturn", "CLAUDE" + tg, ts, turn.get("text", ""))
             elif kind == "thinking":
-                md_boxes("thinkturn", esc(_("THINKING")), ts,
+                md_boxes("thinkturn", clabel(_("THINKING")), ts,
                          turn.get("text", "") or _("(no text: display=omitted)"))
             elif kind == "tool":
                 err = " " + _("[ERROR]") if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
                                    + str(turn.get("label", "")) + err))
-                tool_head = esc(_("TOOL")) + ": " + head
+                tool_head = clabel(_("TOOL")) + ": " + head
                 title = tool_head + stamp(ts)
                 if not tool_output:
                     # A bare title box: the call is on the record, its payload is not.
@@ -3942,41 +3991,42 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                     continue
                 tail = ""
                 if not turn.get("output_text") and not turn.get("resolved"):
-                    tail += inl(_("(no result in the source)")) + "\n\n"
+                    tail += chrome(_("(no result in the source)")) + "\n\n"
                 for _img in turn.get("output_images") or []:
-                    tail += inl(_("[image omitted]")) + "\n\n"
+                    tail += chrome(_("[image omitted]")) + "\n\n"
                 segments = [pretty_tool_input(turn.get("input") or "")]
                 if turn.get("output_text"):
                     segments.append(turn["output_text"])
                 verbatim_boxes("toolturn", tool_head, ts, *segments, tail=tail)
             elif kind == "user_image":
                 B.append(box("humanturn",
-                             esc(_("HUMAN - PASTED IMAGE")) + stamp(ts),
-                             inl(_("(image omitted in this format; the HTML archive holds it)"))
+                             clabel(_("HUMAN - PASTED IMAGE")) + stamp(ts),
+                             chrome(_("(image omitted in this format; the HTML archive holds it)"))
                              + "\n\n"))
             else:
-                badge = _(str(turn.get("badge", kind)))
+                badge = clabel(_(str(turn.get("badge", kind))))
                 if turn.get("detail"):
-                    badge += " - " + str(turn["detail"])
-                badge = esc(shorten(badge))
+                    badge += " - " + esc(str(turn["detail"]))
+                badge = shorten(badge)
                 verbatim_boxes("systurn", badge, ts, (turn.get("text") or "").rstrip())
 
     emit_turns(t.turns)
     if agents and subagents_on:
         for k, (aid, _af, at) in enumerate(agents, 1):
-            B.append("\\section*{" + inl(_("Subagent transcript A{k}: agent-{aid}").format(k=k, aid=aid))
+            B.append("\\section*{" + chrome(_("Subagent transcript A{k}: agent-{aid}").format(k=k, aid=aid))
                      + "}\n\\addcontentsline{toc}{section}{"
-                     + inl(_("Subagent A{k}: agent-{aid}").format(k=k, aid=aid[:8])) + "}\n")
-            B.append(inl(_("({records} records; a background agent's own conversation, archived "
-                           "from its transcript file beside the session)").format(
-                               records=f"{sum(at.record_types.values()):,}")) + "\n\n")
+                     + chrome(_("Subagent A{k}: agent-{aid}").format(k=k, aid=aid[:8]), protect=True)
+                     + "}\n")
+            B.append(chrome(_("({records} records; a background agent's own conversation, archived "
+                              "from its transcript file beside the session)").format(
+                                  records=f"{sum(at.record_types.values()):,}")) + "\n\n")
             emit_turns(at.turns)
     elif agents:
-        B.append("\\section*{" + inl(_("Subagent transcripts (not rendered)")) + "}\n")
-        B.append(inl(_("{n} subagent transcript file(s) exist for this session but were not "
-                       "rendered (--subagents off): {files}. Their token usage is included in "
-                       "the usage table.").format(
-                           n=len(agents), files=", ".join(f"agent-{a}" for a, _f, _t in agents)))
+        B.append("\\section*{" + chrome(_("Subagent transcripts (not rendered)")) + "}\n")
+        B.append(chrome(_("{n} subagent transcript file(s) exist for this session but were not "
+                          "rendered (--subagents off): {files}. Their token usage is included in "
+                          "the usage table.").format(
+                              n=len(agents), files=", ".join(f"agent-{a}" for a, _f, _t in agents)))
                  + "\n\n")
     if not fragment:
         B.append("\\end{document}\n")
@@ -4005,7 +4055,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                                               m=format(_TEX_BOX_MAX_LINES, ",")))
     if notes:
         notes.append(_("The HTML archive holds all of it unaltered."))
-        B[dropnote_slot] = inl(" ".join(notes)) + "\n\n"
+        B[dropnote_slot] = chrome(" ".join(notes)) + "\n\n"
     return "".join(B), tally
 
 

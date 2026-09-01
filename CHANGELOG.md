@@ -3,6 +3,41 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.1 — 2026-08-31
+
+From the independent review of 2.7.0.
+
+**Fixed**
+- **A `--fragment` with a non-English `--lang` mangled the archiver's own
+  words** — the neutral-mode transliterator stripped their accents
+  ("Resume de la session", "Ahnliches"), dropped `ß`/`œ` outright, and
+  counted them in the drop-note as transliterated conversation characters
+  (a pure-ASCII conversation was told characters had been transliterated).
+  Chrome now goes through its own path: accent macros in a fragment, a
+  throwaway tally always.
+- **The standalone LaTeX made the chrome language the document's default
+  language**, so Claude's English prose was hyphenated with French/German/…
+  patterns and, for French, got spaces inserted before `!`, `?`, `:`, `;`.
+  English stays the default; only the archiver's words are wrapped in
+  `\text<lang>{}`; without polyglossia the wrapper is the identity.
+- **A `--fragment` did not compile under pdflatex** — in any language, since
+  2.4: a subscript transliterated into prose math (`$_{12}$`) got
+  `\allowbreak{}` inserted after the `_`, which pdflatex rejects. Found by
+  compiling the fragment inside a host document, which the suite now does
+  (English and French) whenever pdflatex is on `PATH`.
+- Eight parser labels (`Harness nudge`, `Local command output`, `Local
+  command caveat`, `Prompt-submit hook`, `Loop heartbeat`, `Skill already
+  loaded`, `Interrupted by user`, `Image scaling note`) had no translation
+  and were invisible to the suite's completeness check; the check now reads
+  the marker tables too.
+- The sentences the archiver adds at parse time — the retraction note in a
+  safeguard-refusal event, TodoWrite's `{n} item(s)`, ReportFindings'
+  `{n} finding(s)` — follow `--lang`.
+- One family of reported-cost sentences instead of two: the plain-text note
+  is the HTML paragraph flattened, so text/Markdown/LaTeX now also state
+  that the meter restarts on resume. Twelve translations fewer to keep in
+  sync.
+
 ## 2.7.0 — 2026-08-31
 
 **Added**

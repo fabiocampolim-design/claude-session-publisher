@@ -1916,6 +1916,7 @@ for _node in _ast.walk(_ast.parse(_src)):
 check("the source passes at least 100 distinct strings through _()", len(_keys) >= 100, str(len(_keys)))
 _dynamic = ({lbl for _pol, lbl in ta.ATTACHMENT_POLICY.values()}
             | {lbl for _pol, lbl in ta.SYSTEM_SUBTYPE_POLICY.values()}
+            | {lbl for _m, lbl in ta.TEXT_MARKERS} | {lbl for _m, lbl in ta.REGEX_MARKERS}
             | set(getattr(ta, "L10N_DYNAMIC_KEYS", ())))
 for _lang, _table in sorted(_tables.items()):
     _missing = sorted(k for k in _keys if k not in _table)
@@ -1937,9 +1938,13 @@ _TEXT_EN = ["FIDELITY REPORT", "[ HUMAN -", "records that produced one or more t
             "Every turn in the HTML archive is present here"]
 _MD_EN = ["## Fidelity report", "## Human -", "- records that produced one or more turns below"]
 _TEX_EN = ["\\section*{Fidelity report}", "{HUMAN -", "records that produced one or more turns below"]
-_POLYGLOSSIA = {"pt-BR": "\\setdefaultlanguage[variant=brazilian]{portuguese}",
-                "es": "\\setdefaultlanguage{spanish}", "de": "\\setdefaultlanguage{german}",
-                "fr": "\\setdefaultlanguage{french}"}
+# The conversation is set in English (default language); only the archiver's
+# own words switch language, so a French page never re-spaces Claude's "!".
+_POLYGLOSSIA = {"pt-BR": "\\setotherlanguage[variant=brazilian]{portuguese}",
+                "es": "\\setotherlanguage{spanish}", "de": "\\setotherlanguage{german}",
+                "fr": "\\setotherlanguage{french}"}
+_TEXTLANG = {"pt-BR": "\\textportuguese{", "es": "\\textspanish{", "de": "\\textgerman{",
+             "fr": "\\textfrench{"}
 
 
 def _page(d):
@@ -2013,8 +2018,9 @@ try:
         check(f"{_lang}: the LaTeX verbatim blocks equal the English ones",
               _vb.findall(_tex) == _vb.findall(_en_tex),
               f"{len(_vb.findall(_tex))} vs {len(_vb.findall(_en_tex))}")
-        check(f"{_lang}: the LaTeX sets its polyglossia language behind an existence guard",
-              _POLYGLOSSIA[_lang] in _tex and "\\IfFileExists{polyglossia.sty}" in _tex, "missing")
+        check(f"{_lang}: the LaTeX keeps English as the default language and adds its own",
+              _POLYGLOSSIA[_lang] in _tex and "\\setdefaultlanguage{english}" in _tex
+              and "\\IfFileExists{polyglossia.sty}" in _tex and _TEXTLANG[_lang] in _tex, "missing")
         check(f"{_lang}: the audit log stays English",
               any("outcome: ok" in f.read_text(encoding="utf-8") and "wrote " in f.read_text(encoding="utf-8")
                   for f in (_d / "logs").glob("*.log")), "no English log")
@@ -2082,6 +2088,124 @@ check("README documents --lang and the four languages",
 check("USER_MANUAL documents --lang, CLAUDE_ARCHIVE_LANG and what stays untranslated",
       "--lang" in _manual_l and "CLAUDE_ARCHIVE_LANG" in _manual_l and "verbatim" in _manual_l, "missing")
 check("CHANGELOG has the 2.7.0 entry", "## 2.7.0" in _changelog_l, "missing")
+
+
+print("\n[38] --lang after the 2.7.0 review: fragments, the conversation's language, parse-time words")
+# A fragment is engine-neutral: the archiver's own accented words must reach
+# pdflatex as accent macros, never as stripped letters, and must not be
+# counted as transliterated conversation characters.
+_t = ta.parse_transcript(source_of(SAMPLE), 16384)
+_ctx = {"title": "T", "session_id": SAMPLE, "subtitle": "s", "summary_text": "", "cost_note": ""}
+_ag = [(af.stem[len("agent-"):], af, ta.parse_transcript(af, 16384))
+       for af in sorted((source_of(SAMPLE).parent / SAMPLE / "subagents").glob("agent-*.jsonl"))]
+try:
+    ta.LANG = "en"
+    _src_en, _tally_en = ta.emit_latex(_t, _ctx, fragment=True, tool_output=True, agents=_ag)
+    _frag = {}
+    for _lang in ("pt-BR", "es", "de", "fr"):
+        ta.LANG = _lang
+        _frag[_lang], _tally = ta.emit_latex(_t, _ctx, fragment=True, tool_output=True, agents=_ag)
+        check(f"{_lang}: a fragment's drop-note counts only the conversation",
+              (_tally["transliterated"], _tally["glyphs"]) == (_tally_en["transliterated"], _tally_en["glyphs"]),
+              f"{dict(_tally)} vs {dict(_tally_en)}")
+        check(f"{_lang}: the fragment is pure ASCII",
+              all(ord(c) < 128 for c in _frag[_lang]), "non-ASCII byte in an engine-neutral fragment")
+    check("pt-BR fragment: accents survive as macros (o-acute)",
+          "\\'{o}" in _frag["pt-BR"] or "\\'o" in _frag["pt-BR"], "no acute macro")
+    check("de fragment: umlauts survive as macros (Datensätze)",
+          "Datens\\\"{a}tze" in _frag["de"] or "Datens\\\"atze" in _frag["de"], "no umlaut macro")
+    check("fr fragment: the fidelity heading keeps its accents",
+          "fid\\'{e}lit\\'{e}" in _frag["fr"] or "fid\\'elit\\'e" in _frag["fr"], "accents stripped")
+    check("no fragment carries a stripped heading",
+          "Relatorio" not in _frag["pt-BR"] and "fidelite" not in _frag["fr"], "stripped")
+    # A standalone document wraps the archiver's words in the other language and
+    # leaves the conversation in the default (English) language.
+    ta.LANG = "fr"
+    _std, _ = ta.emit_latex(_t, _ctx, fragment=False, tool_output=False, agents=_ag)
+    check("fr standalone: the conversation's boxes are not wrapped in \\textfrench",
+          "\\textfrench{" in _std and "\\begin{claudeturn}{\\textfrench" not in _std
+          and "\\begin{humanturn}{\\textfrench" not in _std, "conversation wrapped")
+    check("fr standalone: the section headings are in French inside \\textfrench",
+          "\\section*{\\textfrench{Rapport de fid" in _std, "heading not wrapped")
+finally:
+    ta.LANG = "en"
+
+# The fragment's promise is "compiles under pdflatex": compile it, English and
+# French, inside a minimal host. Found on the way: a math subscript in prose
+# ($_{12}$, from a transliterated subscript) got \allowbreak{} inserted after
+# the "_" and stopped pdflatex -- in every language, English included.
+_HOST = ("\\documentclass{article}\n\\usepackage[T1]{fontenc}\n\\usepackage{fvextra}\n"
+         "\\usepackage{xcolor}\n\\usepackage{enumitem}\n\\usepackage{booktabs}\n"
+         "\\usepackage{array}\n\\usepackage[most]{tcolorbox}\n\\begin{document}\n"
+         "\\input{frag.tex}\n\\end{document}\n")
+if shutil.which("pdflatex"):
+    for _lang, _text in (("en", _src_en), ("fr", _frag["fr"])):
+        _hd = pathlib.Path(tempfile.mkdtemp(prefix=f"ta-frag-host-{_lang}-"))
+        try:
+            (_hd / "frag.tex").write_text(_text, encoding="utf-8")
+            (_hd / "host.tex").write_text(_HOST, encoding="utf-8")
+            _pl = subprocess.run(["pdflatex", "-interaction=nonstopmode", "host.tex"],
+                                 cwd=str(_hd), capture_output=True, text=True, errors="replace")
+            _log = (_hd / "host.log").read_text(encoding="utf-8", errors="replace") \
+                if (_hd / "host.log").exists() else _pl.stdout
+            _errs = [ln for ln in _log.splitlines() if ln.startswith("!")]
+            check(f"{_lang}: the fragment compiles under pdflatex inside a host document",
+                  _pl.returncode == 0 and not _errs and (_hd / "host.pdf").exists(), str(_errs[:3]))
+        finally:
+            shutil.rmtree(_hd, ignore_errors=True)
+else:
+    skip("en: the fragment compiles under pdflatex inside a host document", "no pdflatex")
+    skip("fr: the fragment compiles under pdflatex inside a host document", "no pdflatex")
+check("a math subscript in prose gets no \\allowbreak inside it",
+      "_\\allowbreak" not in ta.tex_inline("x\u2081\u2082\u2083\u2084\u2085\u2086 y", collections.Counter(), neutral=True)
+      and "$_{123456}$" in ta.tex_inline("x\u2081\u2082\u2083\u2084\u2085\u2086 y", collections.Counter(), neutral=True),
+      ta.tex_inline("x\u2081\u2082\u2083\u2084\u2085\u2086 y", collections.Counter(), neutral=True))
+
+# Parser labels from the marker tables and parse-time sentences.
+try:
+    ta.LANG = "pt-BR"
+    check("pt-BR: TodoWrite's item count is in the document language",
+          "item(s)" not in ta.describe_tool("TodoWrite", {"todos": [1, 2]})[1], "still English")
+    check("pt-BR: ReportFindings' count is in the document language",
+          "finding(s)" not in ta.describe_tool("ReportFindings", {"findings": [1]})[1], "still English")
+    _tmp = pathlib.Path(tempfile.mkdtemp(prefix="ta-lang-parse-"))
+    try:
+        _recs = [
+            {"type": "user", "uuid": "u1", "timestamp": "2026-08-31T10:00:00.000Z",
+             "message": {"role": "user", "content": "[Request interrupted by user]"}},
+            {"type": "system", "subtype": "model_refusal_fallback", "uuid": "s1",
+             "timestamp": "2026-08-31T10:00:01.000Z", "originalModel": "a", "fallbackModel": "b",
+             "retractedMessageUuids": ["zz1", "zz2"], "content": "refused"},
+        ]
+        _f = _tmp / "p.jsonl"
+        _f.write_text("\n".join(json.dumps(r) for r in _recs) + "\n", encoding="utf-8")
+        _tp = ta.parse_transcript(_f, 16384)
+        _sys = [x for x in _tp.turns if x["kind"] == "system"]
+        _ev = [x for x in _tp.turns if x["kind"] == "system_record"]
+        check("the 'Interrupted by user' badge stays an English identifier at parse time",
+              _sys and _sys[0]["badge"] == "Interrupted by user", str([x.get("badge") for x in _sys]))
+        check("pt-BR: the retraction sentence the archiver adds to the event body is translated",
+              _ev and "were retracted" not in _ev[0]["text"] and "retra" in _ev[0]["text"].lower()
+              and "refused" in _ev[0]["text"], str([x.get("text") for x in _ev])[:200])
+    finally:
+        shutil.rmtree(_tmp, ignore_errors=True)
+finally:
+    ta.LANG = "en"
+
+# One family of reported-cost sentences: the plain note is the HTML note flattened.
+_rc = {"usd": 1.5, "runs": 2, "lines_added": 3, "lines_removed": 1, "partial": True,
+       "first_start": datetime.datetime(2026, 8, 31, 10, 0, tzinfo=datetime.timezone.utc),
+       "unknown_model_cost": True, "by_model": {}}
+check("reported_cost_note is the flattened HTML note",
+      hasattr(ta, "reported_cost_html")
+      and ta.reported_cost_note(_rc) == ta.html_fragment_to_text(ta.reported_cost_html(_rc)),
+      "two phrasings")
+check("no second family of cost sentences in the table",
+      not any(k.startswith("Reported cost: $") or k.startswith(". The meter covers")
+              for k in ta.L10N["pt-BR"]), "duplicate keys")
+check("the plain note states the coverage and the floor",
+      "restarts" in ta.reported_cost_note(_rc) and "floor" in ta.reported_cost_note(_rc), ta.reported_cost_note(_rc))
+check("CHANGELOG has the 2.7.1 entry", "## 2.7.1" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
