@@ -2313,6 +2313,81 @@ check("text: the [ERROR] marker survives the cut", "..." in _eline and "[ERROR]"
 shutil.rmtree(_ed, ignore_errors=True)
 check("CHANGELOG has the 2.7.3 entry", "## 2.7.3" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
+print("\n[41] The review of 2.7.3: a failed compile never traces back, never deletes an earlier run's PDF; the marker stays inside the width")
+# (a) The marker must fit inside the bound shorten() enforces: a tcolorbox
+# title does not wrap, so "<72 chars>... [ERROR]" is exactly the overflow the
+# bound exists to prevent, and the marker was the part running off the edge.
+_ltitle = re.sub(r"\\_", "_", _etitle.split("{TOOL: ", 1)[-1].split(" \\hfill", 1)[0]) if _etitle else ""
+check("LaTeX: the errored tool title, marker included, stays within 72 characters",
+      bool(_ltitle) and "[ERROR]" in _ltitle and len(_ltitle) <= 72, f"{len(_ltitle)}: {_ltitle}")
+_thead = _eline.strip()[2:].rsplit("   ", 1)[0].strip() if _eline else ""
+check("text: the errored tool head, marker included, stays within 84 characters",
+      bool(_thead) and "[ERROR]" in _thead and len(_thead) <= 84, f"{len(_thead)}: {_thead}")
+# (b) A compile that fails before any page is shipped ("No pages of output")
+# leaves an earlier run's complete PDF untouched -- xelatex never wrote it --
+# and the message says so instead of claiming nothing was written.
+_gd = pathlib.Path(tempfile.mkdtemp(prefix="ta-stalepdf-"))
+_gnames = ("a failure before the first page keeps an earlier run's PDF",
+           "the message says the earlier PDF was left in place")
+if shutil.which("xelatex"):
+    _gtex = _gd / "stale.tex"
+    _gtex.write_text("\\documentclass{article}\\undefinedmacroxyz\\begin{document}x\\end{document}\n", encoding="utf-8")
+    _gpdf = _gtex.with_suffix(".pdf")
+    _gpdf.write_bytes(b"%PDF-1.4 an earlier, complete archive\n")
+    _gold = os.path.getmtime(_gpdf) - 3600
+    os.utime(_gpdf, (_gold, _gold))
+    try:
+        ta.compile_pdf(_gtex)
+        _gexit = None
+    except SystemExit as e:
+        _gexit = str(e)
+    check(_gnames[0], _gexit is not None and _gpdf.exists() and _gpdf.read_bytes().startswith(b"%PDF-1.4 an earlier"),
+          f"exit={str(_gexit)[:80]!r} exists={_gpdf.exists()}")
+    check(_gnames[1], _gexit is not None and "stale.pdf is from an earlier run and was left in place" in _gexit
+          and "no PDF written this run" in _gexit, str(_gexit)[:200])
+else:
+    for _n in _gnames:
+        skip(_n, "no xelatex")
+shutil.rmtree(_gd, ignore_errors=True)
+# (c) On Windows a PDF open in a viewer cannot be deleted, and that same open
+# handle is what makes xelatex fail; the cleanup must not turn the diagnostic
+# exit into a PermissionError traceback (confirmed by the reviewer's repro).
+_hd = pathlib.Path(tempfile.mkdtemp(prefix="ta-lockedpdf-"))
+_hname = "a PDF held open by a viewer: the archiver still exits with the xelatex message"
+if shutil.which("xelatex") and sys.platform == "win32":
+    _htex = _hd / "held.tex"
+    _htex.write_text("\\documentclass{article}\\begin{document}hello\\end{document}\n", encoding="utf-8")
+    _hpdf = _htex.with_suffix(".pdf")
+    _hpdf.write_bytes(b"%PDF-1.4 being viewed\n")
+    # Python's open() shares write and delete access; a viewer does not. Take
+    # the handle the way a viewer does: read access, FILE_SHARE_READ only.
+    import ctypes
+    _k32 = ctypes.windll.kernel32
+    _k32.CreateFileW.restype = ctypes.c_void_p
+    _k32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                 ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    _k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    _hh = _k32.CreateFileW(str(_hpdf), 0x80000000, 0x1, None, 3, 0x80, None)
+    if _hh in (None, ctypes.c_void_p(-1).value):
+        skip(_hname, "could not take a viewer-style handle")
+    else:
+        try:
+            try:
+                ta.compile_pdf(_htex)
+                _hres = "compiled"
+            except SystemExit as e:
+                _hres = "exit: " + str(e)
+            except Exception as e:  # noqa: BLE001 - the defect is exactly an escaped exception
+                _hres = "traceback: " + type(e).__name__
+        finally:
+            _k32.CloseHandle(_hh)
+        check(_hname, _hres.startswith("exit: ") and "xelatex failed" in _hres and "could not remove held.pdf" in _hres,
+              _hres[:200])
+else:
+    skip(_hname, "no xelatex" if not shutil.which("xelatex") else "not Windows")
+shutil.rmtree(_hd, ignore_errors=True)
+check("CHANGELOG has the 2.7.4 entry", "## 2.7.4" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
     skip("no file appeared in CLAUDE_ARCHIVE_DIR during the suite",

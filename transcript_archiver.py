@@ -51,13 +51,14 @@ import sys
 import subprocess
 import shutil
 import textwrap
+import time
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.3"
+VERSION = "2.7.4"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -1274,15 +1275,20 @@ def truncate(s: str, n: int = 100) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def shorten(text: str, width: int = 72) -> str:
+def shorten(text: str, width: int = 72, suffix: str = "") -> str:
     """One-line, bounded label for a box title.
 
     A tcolorbox title does not wrap: a PowerShell call whose label is the whole
     command ran off the right edge of the page on 95 blocks of one archive.
     Newlines are collapsed first, because a title spanning lines breaks the box.
+    ``suffix`` (an error marker) is never cut and counts against the width, so
+    the whole title stays inside the bound and the marker stays visible.
     """
     text = " ".join(str(text).split())
-    return text if len(text) <= width else text[:width - 3].rstrip() + "..."
+    room = width - len(suffix)
+    if len(text) <= room:
+        return text + suffix
+    return text[:max(room, 3) - 3].rstrip() + "..." + suffix
 
 
 def pretty_tool_input(raw: str) -> str:
@@ -3606,7 +3612,7 @@ def _text_turns(turns, L, W, tool_output):
         elif kind == "tool":
             err = "  " + _("[ERROR]") if turn.get("is_error") else ""
             head = shorten(_("TOOL") + " " + str(turn.get("chip", "")) + " - "
-                           + str(turn.get("label", "")), 84) + err
+                           + str(turn.get("label", "")), 84, suffix=err)
             if not tool_output:
                 L += ["", "  . " + head + "   " + ts]
                 continue
@@ -3984,7 +3990,7 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                 # label truncated it away and an errored call looked fine.
                 err = " " + _("[ERROR]") if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
-                                   + str(turn.get("label", "")))) + esc(err)
+                                   + str(turn.get("label", "")), suffix=err))
                 tool_head = clabel(_("TOOL")) + ": " + head
                 title = tool_head + stamp(ts)
                 if not tool_output:
@@ -4070,6 +4076,7 @@ def compile_pdf(tex_path):
     exe = shutil.which("xelatex")
     if not exe:
         sys.exit("xelatex not found on PATH -- required for --format pdf")
+    started = time.time()
     for run in (1, 2):
         # xelatex writes font names and file paths in whatever encoding the OS
         # hands it; decoding that as the Windows default raises inside
@@ -4087,11 +4094,26 @@ def compile_pdf(tex_path):
             # xelatex still writes the pages shipped before the error, so a
             # failed compile would leave a PDF that looks like an archive
             # (2.7.1 left pass-1 PDFs with an empty table of contents).
-            # Remove it and the aux files; keep the .tex and the .log.
+            # Remove what this run wrote and the aux files; keep the .tex and
+            # the .log. A PDF older than this run is an earlier archive xelatex
+            # never touched ("No pages of output"): leave it and say so. A file
+            # that cannot be removed (open in a viewer -- often the very reason
+            # xelatex failed) is reported, never a traceback.
+            notes = []
             for ext in (".pdf", ".aux", ".out", ".toc"):
-                tex_path.with_suffix(ext).unlink(missing_ok=True)
-            sys.exit("xelatex failed on pass " + str(run) + " (no PDF written; the .tex and "
-                     "its .log are beside it):\n" + tail)
+                f = tex_path.with_suffix(ext)
+                if not f.exists():
+                    continue
+                if ext == ".pdf" and f.stat().st_mtime < started - 1:
+                    notes.append(f.name + " is from an earlier run and was left in place")
+                    continue
+                try:
+                    f.unlink()
+                except OSError as e:
+                    notes.append("could not remove " + f.name + ": " + (e.strerror or str(e)))
+            sys.exit("xelatex failed on pass " + str(run) + " (no PDF written this run; the "
+                     ".tex and its .log are beside it" + "".join("; " + n for n in notes)
+                     + "):\n" + tail)
     for ext in (".aux", ".log", ".out", ".toc"):
         tex_path.with_suffix(ext).unlink(missing_ok=True)
     (tex_path.parent / "missfont.log").unlink(missing_ok=True)

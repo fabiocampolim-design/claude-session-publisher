@@ -3,6 +3,25 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.4 — 2026-09-03
+
+From the independent review of 2.7.3.
+
+**Fixed**
+- **A failed compile never turns into a Python traceback.** 2.7.3's cleanup
+  unlinked the partial PDF; on Windows a PDF open in a viewer cannot be
+  deleted, and that open handle is often the very reason xelatex failed, so
+  the diagnostic exit was replaced by a `PermissionError`. Each removal is
+  now attempted and reported in the message.
+- **A failure before the first page no longer deletes an earlier run's
+  PDF.** When xelatex ends with "No pages of output" it never touched the
+  file; a PDF older than the run is left in place and the message says so.
+- **The `[ERROR]` marker counts against the title width.** 2.7.3 appended it
+  after the cut, so an errored title could run 8 characters past the bound
+  the cut exists to enforce (more in a translated marker). `shorten()` takes
+  the marker as a `suffix` that is never cut and always fits; the LaTeX and
+  text emitters use it, so the invariant lives in one place.
+
 ## 2.7.3 — 2026-09-03
 
 From the independent review of 2.7.2.
