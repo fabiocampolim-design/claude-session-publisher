@@ -57,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.2"
+VERSION = "2.7.3"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -3606,7 +3606,7 @@ def _text_turns(turns, L, W, tool_output):
         elif kind == "tool":
             err = "  " + _("[ERROR]") if turn.get("is_error") else ""
             head = shorten(_("TOOL") + " " + str(turn.get("chip", "")) + " - "
-                           + str(turn.get("label", "")) + err, 84)
+                           + str(turn.get("label", "")), 84) + err
             if not tool_output:
                 L += ["", "  . " + head + "   " + ts]
                 continue
@@ -3980,9 +3980,11 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                 md_boxes("thinkturn", clabel(_("THINKING")), ts,
                          turn.get("text", "") or _("(no text: display=omitted)"))
             elif kind == "tool":
+                # The marker goes on after the cut: inside shorten() a long
+                # label truncated it away and an errored call looked fine.
                 err = " " + _("[ERROR]") if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
-                                   + str(turn.get("label", "")) + err))
+                                   + str(turn.get("label", "")))) + esc(err)
                 tool_head = clabel(_("TOOL")) + ": " + head
                 title = tool_head + stamp(ts)
                 if not tool_output:
@@ -4082,7 +4084,14 @@ def compile_pdf(tex_path):
             if log.exists():
                 tail = "\n".join(log.read_text(encoding="utf-8", errors="replace")
                                  .splitlines()[-30:])
-            sys.exit("xelatex failed on pass " + str(run) + ":\n" + tail)
+            # xelatex still writes the pages shipped before the error, so a
+            # failed compile would leave a PDF that looks like an archive
+            # (2.7.1 left pass-1 PDFs with an empty table of contents).
+            # Remove it and the aux files; keep the .tex and the .log.
+            for ext in (".pdf", ".aux", ".out", ".toc"):
+                tex_path.with_suffix(ext).unlink(missing_ok=True)
+            sys.exit("xelatex failed on pass " + str(run) + " (no PDF written; the .tex and "
+                     "its .log are beside it):\n" + tail)
     for ext in (".aux", ".log", ".out", ".toc"):
         tex_path.with_suffix(ext).unlink(missing_ok=True)
     (tex_path.parent / "missfont.log").unlink(missing_ok=True)

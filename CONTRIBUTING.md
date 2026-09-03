@@ -33,8 +33,12 @@ conversation, so trim before pasting and never attach it whole.
    ```
    python -m pyflakes transcript_archiver.py tests docs examples
    python tests/test_archiver.py
-   python -m unittest discover -s tests      # also runs the vendored publishing checker's wiring test
+   python tests/test_githubify_conformance.py   # the vendored publishing checker's wiring test
    ```
+
+   (`python -m unittest discover -s tests` would import `test_archiver.py`
+   and run the whole suite a second time as a side effect; run the two
+   files directly.)
 
 5. Keep the documentation in step: `README.md`, `AGENTS.md`,
    `docs/USER_MANUAL.md` and `CHANGELOG.md` describe the same program, and

@@ -3,6 +3,25 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.3 — 2026-09-03
+
+From the independent review of 2.7.2.
+
+**Fixed**
+- **A failed xelatex compile no longer leaves a partial PDF behind.**
+  `-halt-on-error` still writes the pages shipped before the error, so a
+  failed run left a file that looked like an archive (2.7.1's pass-one PDFs
+  had an empty table of contents). The PDF and the aux files are removed;
+  the `.tex` and the xelatex `.log` stay for diagnosis and the error message
+  says so.
+- **The `[ERROR]` marker of a failed tool call survives a long title** in the
+  LaTeX and text formats. It was appended before the 72-character cut, so a
+  long command line truncated it away and the call read as successful.
+  Markdown already kept it outside the cut; HTML was never affected.
+- The suite cleans up the temporary directory of the Windows-path check, and
+  `CONTRIBUTING.md` no longer suggests `unittest discover`, which imported
+  the suite and ran it a second time.
+
 ## 2.7.2 — 2026-09-02
 
 From the audit of 2.7.1: the suite and CI were green, the real-data survival

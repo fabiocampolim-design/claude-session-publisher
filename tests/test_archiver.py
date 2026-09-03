@@ -2251,6 +2251,67 @@ if shutil.which("xelatex"):
 else:
     skip("a Windows-path snapshot compiles under xelatex on pass 1", "no xelatex")
 check("CHANGELOG has the 2.7.2 entry", "## 2.7.2" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+shutil.rmtree(_wd, ignore_errors=True)
+
+print("\n[40] The review of 2.7.2: no partial PDF after a failed compile; the error marker survives a long tool title")
+# (a) xelatex -halt-on-error still writes the pages shipped before the error,
+# so a failed compile used to leave a PDF that looked like an archive (2.7.1's
+# pass-1 PDFs had an empty table of contents). The .tex and the xelatex .log
+# stay for diagnosis; the partial PDF and the aux files must not.
+_fd = pathlib.Path(tempfile.mkdtemp(prefix="ta-failpdf-"))
+_fnames = ("a failed compile exits with the xelatex tail",
+           "a failed compile leaves no partial PDF behind",
+           "a failed compile keeps the .tex and the xelatex .log for diagnosis")
+if shutil.which("xelatex"):
+    _ftex = _fd / "bad.tex"
+    _ftex.write_text("\\documentclass{article}\\begin{document}page one\\newpage page two"
+                     "\\undefinedmacroxyz\\end{document}\n", encoding="utf-8")
+    try:
+        ta.compile_pdf(_ftex)
+        _fexit = None
+    except SystemExit as e:
+        _fexit = str(e)
+    check(_fnames[0], _fexit is not None and "Undefined control sequence" in _fexit, str(_fexit)[:200])
+    check(_fnames[1], not _ftex.with_suffix(".pdf").exists() and not _ftex.with_suffix(".aux").exists(),
+          "bad.pdf or bad.aux left behind")
+    check(_fnames[2], _ftex.exists() and _ftex.with_suffix(".log").exists(), "missing")
+else:
+    for _n in _fnames:
+        skip(_n, "no xelatex")
+shutil.rmtree(_fd, ignore_errors=True)
+# (b) The "[ERROR]" marker was appended before shorten(), so a long tool label
+# cut the marker away and an errored call was titled like a successful one in
+# the LaTeX and text formats (Markdown kept it outside the cut).
+_ed = pathlib.Path(tempfile.mkdtemp(prefix="ta-errmark-"))
+_esid = "0000000e-4404-4000-8000-000000000043"
+_ecmd = "python run_everything.py --with-a-very-long-list-of-options --that-pushes-the-label --past-the-cut"
+_erec = [
+    {"type": "user", "uuid": "e-u1", "parentUuid": None, "sessionId": _esid, "cwd": "/home/example",
+     "version": "2.1.0", "timestamp": "2026-01-15T09:00:00Z",
+     "message": {"role": "user", "content": "run it"}},
+    {"type": "assistant", "uuid": "e-a1", "parentUuid": "e-u1", "sessionId": _esid, "cwd": "/home/example",
+     "version": "2.1.0", "timestamp": "2026-01-15T09:00:05Z", "requestId": "req_e1",
+     "message": {"role": "assistant", "model": "claude-opus-5",
+                 "content": [{"type": "tool_use", "id": "tool_e1", "name": "Bash", "input": {"command": _ecmd}}],
+                 "usage": {"input_tokens": 10, "output_tokens": 2}}},
+    {"type": "user", "uuid": "e-u2", "parentUuid": "e-a1", "sessionId": _esid, "cwd": "/home/example",
+     "version": "2.1.0", "timestamp": "2026-01-15T09:00:06Z",
+     "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "tool_e1",
+                                              "content": "Traceback: it failed", "is_error": True}]}},
+]
+_esrc = _ed / f"{_esid}.jsonl"
+_esrc.write_text("\n".join(json.dumps(r) for r in _erec) + "\n", encoding="utf-8")
+_et = ta.parse_transcript(_esrc, 16384)
+_ectx = {"title": "T", "session_id": _esid, "subtitle": "s", "summary_text": "", "cost_note": ""}
+_etex, _ = ta.emit_latex(_et, _ectx, fragment=False, tool_output=False, agents=[])
+_etitle = next((l for l in _etex.splitlines() if "Bash - python run" in l), "")
+check("LaTeX: a long errored tool title is shortened", "..." in _etitle, _etitle[:160])
+check("LaTeX: the [ERROR] marker survives the cut", "[ERROR]" in _etitle, _etitle[:160])
+_etxt = ta.emit_text(_et, _ectx, tool_output=False, agents=[])
+_eline = next((l for l in _etxt.splitlines() if "Bash - python run" in l), "")
+check("text: the [ERROR] marker survives the cut", "..." in _eline and "[ERROR]" in _eline, _eline[:160])
+shutil.rmtree(_ed, ignore_errors=True)
+check("CHANGELOG has the 2.7.3 entry", "## 2.7.3" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
