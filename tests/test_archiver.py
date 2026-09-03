@@ -2343,8 +2343,8 @@ if shutil.which("xelatex"):
         _gexit = str(e)
     check(_gnames[0], _gexit is not None and _gpdf.exists() and _gpdf.read_bytes().startswith(b"%PDF-1.4 an earlier"),
           f"exit={str(_gexit)[:80]!r} exists={_gpdf.exists()}")
-    check(_gnames[1], _gexit is not None and "stale.pdf is from an earlier run and was left in place" in _gexit
-          and "no PDF written this run" in _gexit, str(_gexit)[:200])
+    check(_gnames[1], _gexit is not None and "stale.pdf is from an earlier run and was left in place" in _gexit,
+          str(_gexit)[:200])
 else:
     for _n in _gnames:
         skip(_n, "no xelatex")
@@ -2381,12 +2381,110 @@ if shutil.which("xelatex") and sys.platform == "win32":
                 _hres = "traceback: " + type(e).__name__
         finally:
             _k32.CloseHandle(_hh)
-        check(_hname, _hres.startswith("exit: ") and "xelatex failed" in _hres and "could not remove held.pdf" in _hres,
+        # xelatex could not write the held file, so it is unchanged: "left in
+        # place" is the accurate report; a failed removal is the other honest one.
+        check(_hname, _hres.startswith("exit: ") and "xelatex failed" in _hres
+              and ("held.pdf is from an earlier run and was left in place" in _hres or "could not be removed" in _hres),
               _hres[:200])
 else:
     skip(_hname, "no xelatex" if not shutil.which("xelatex") else "not Windows")
 shutil.rmtree(_hd, ignore_errors=True)
 check("CHANGELOG has the 2.7.4 entry", "## 2.7.4" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+
+print("\n[42] The review of 2.7.4: an earlier PDF is recognised by its stat, not the clock; cleanup never raises on success either; every note is true")
+# (a) 2.7.4 called a PDF "earlier" when its mtime predated the run by a second,
+# which a skewed clock (WSL2 after a host sleep, a NAS share) defeats in both
+# directions. The PDF's stat before pass 1 is the only evidence needed: an
+# unchanged file was not written by this run, whatever the clocks say.
+_kd = pathlib.Path(tempfile.mkdtemp(prefix="ta-freshstale-"))
+_kname = "an earlier PDF written a moment ago is still kept when xelatex ships no pages"
+if shutil.which("xelatex"):
+    _ktex = _kd / "fresh.tex"
+    _ktex.write_text("\\documentclass{article}\\undefinedmacroxyz\\begin{document}x\\end{document}\n", encoding="utf-8")
+    _kpdf = _ktex.with_suffix(".pdf")
+    _kpdf.write_bytes(b"%PDF-1.4 an earlier archive, saved seconds ago\n")   # fresh mtime on purpose
+    try:
+        ta.compile_pdf(_ktex)
+        _kexit = None
+    except SystemExit as e:
+        _kexit = str(e)
+    check(_kname, _kexit is not None and _kpdf.exists() and "fresh.pdf is from an earlier run and was left in place" in _kexit,
+          f"exists={_kpdf.exists()} {str(_kexit)[:160]!r}")
+else:
+    skip(_kname, "no xelatex")
+shutil.rmtree(_kd, ignore_errors=True)
+# (b) The success path removed its aux files with a bare unlink(); a held
+# file there turned a finished PDF into a traceback. missfont.log is the one
+# such file xelatex does not itself need to write during the compile.
+_md_ = pathlib.Path(tempfile.mkdtemp(prefix="ta-heldaux-"))
+_mname = "a held aux file after a successful compile: the PDF is returned, no traceback"
+if shutil.which("xelatex") and sys.platform == "win32":
+    _mtex = _md_ / "ok.tex"
+    _mtex.write_text("\\documentclass{article}\\begin{document}hello\\end{document}\n", encoding="utf-8")
+    _mmf = _md_ / "missfont.log"
+    _mmf.write_text("held by a viewer\n", encoding="utf-8")
+    import ctypes
+    _k32 = ctypes.windll.kernel32
+    _k32.CreateFileW.restype = ctypes.c_void_p
+    _k32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                 ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+    _k32.CloseHandle.argtypes = [ctypes.c_void_p]
+    _mh = _k32.CreateFileW(str(_mmf), 0x80000000, 0x1, None, 3, 0x80, None)
+    if _mh in (None, ctypes.c_void_p(-1).value):
+        skip(_mname, "could not take a viewer-style handle")
+    else:
+        try:
+            try:
+                _mres = "pdf: " + str(ta.compile_pdf(_mtex).exists())
+            except SystemExit as e:
+                _mres = "exit: " + str(e)[:120]
+            except Exception as e:  # noqa: BLE001 - the defect is exactly an escaped exception
+                _mres = "traceback: " + type(e).__name__
+        finally:
+            _k32.CloseHandle(_mh)
+        check(_mname, _mres == "pdf: True", _mres)
+else:
+    skip(_mname, "no xelatex" if not shutil.which("xelatex") else "not Windows")
+shutil.rmtree(_md_, ignore_errors=True)
+# (c) When this run's partial PDF cannot be removed, the message must say a
+# partial PDF remains -- never "no PDF written". The removal is made to fail
+# in-process, since no test can hold a file xelatex is writing at that instant.
+_nd = pathlib.Path(tempfile.mkdtemp(prefix="ta-partialmsg-"))
+_nname = "a partial PDF that could not be removed is named as such, not denied"
+if shutil.which("xelatex"):
+    _ntex = _nd / "part.tex"
+    _ntex.write_text("\\documentclass{article}\\begin{document}page one\\newpage page two"
+                     "\\undefinedmacroxyz\\end{document}\n", encoding="utf-8")
+    _orig_unlink = pathlib.Path.unlink
+
+    def _refuse_pdf(self, *a, **k):
+        if self.suffix == ".pdf":
+            raise PermissionError(32, "The process cannot access the file")
+        return _orig_unlink(self, *a, **k)
+    pathlib.Path.unlink = _refuse_pdf
+    try:
+        try:
+            ta.compile_pdf(_ntex)
+            _nexit = None
+        except SystemExit as e:
+            _nexit = str(e)
+    finally:
+        pathlib.Path.unlink = _orig_unlink
+    _nhead = (_nexit or "").split("\n")[0]
+    check(_nname, _nexit is not None and "partial part.pdf" in _nhead and "could not be removed" in _nhead
+          and "no PDF written" not in _nhead, _nhead[:220])
+else:
+    skip(_nname, "no xelatex")
+shutil.rmtree(_nd, ignore_errors=True)
+# (d) The Markdown emitter is the third copy of the title rule and must obey
+# the same bound with the marker counted in.
+_emd = ta.emit_markdown(_et, _ectx, tool_output=False, agents=[])
+_emline = next((l for l in _emd.splitlines() if "Bash" in l and "run_everything" in l), "")
+_emi, _emj = _emline.find("Bash"), _emline.find("[ERROR]")
+_emspan = _emline[_emi:_emj + len("[ERROR]")].replace("**", "") if _emi >= 0 and _emj > _emi else ""
+check("Markdown: the errored tool head, marker included, stays within 90 characters",
+      bool(_emspan) and "..." in _emspan and len(_emspan) <= 90, f"{len(_emspan)}: {_emline[:160]}")
+check("CHANGELOG has the 2.7.5 entry", "## 2.7.5" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:

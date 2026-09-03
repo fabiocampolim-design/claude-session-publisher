@@ -58,7 +58,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.4"
+VERSION = "2.7.5"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -3723,10 +3723,10 @@ def emit_markdown(t, ctx: dict, tool_output: bool = True, agents: list = (),
                 L.extend([f"## {_('Human — pasted image')} — {ts}", "",
                           f"*{_('(image omitted in this format; the HTML archive holds it)')}*", ""])
             elif kind == "tool":
-                err = f" **{_('[ERROR]')}**" if turn.get("is_error") else ""
+                err = " " + _("[ERROR]") if turn.get("is_error") else ""
                 head = shorten(str(turn.get("chip", "")) + " — "
-                               + str(turn.get("label", "")), 90)
-                L.append(f"**{_('Tool')} · {head}**{err} · {ts}")
+                               + str(turn.get("label", "")), 90, suffix=err)
+                L.append(f"**{_('Tool')} · {head}** · {ts}")
                 if tool_output:
                     L.extend(["", _md_fence(pretty_tool_input(turn.get("input") or ""))])
                     if turn.get("output_text"):
@@ -3986,8 +3986,8 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                 md_boxes("thinkturn", clabel(_("THINKING")), ts,
                          turn.get("text", "") or _("(no text: display=omitted)"))
             elif kind == "tool":
-                # The marker goes on after the cut: inside shorten() a long
-                # label truncated it away and an errored call looked fine.
+                # The marker is a suffix shorten() never cuts and counts
+                # against the width, so it stays visible and inside the box.
                 err = " " + _("[ERROR]") if turn.get("is_error") else ""
                 head = esc(shorten(str(turn.get("chip", "")) + " - "
                                    + str(turn.get("label", "")), suffix=err))
@@ -4076,7 +4076,13 @@ def compile_pdf(tex_path):
     exe = shutil.which("xelatex")
     if not exe:
         sys.exit("xelatex not found on PATH -- required for --format pdf")
-    started = time.time()
+    pdf = tex_path.with_suffix(".pdf")
+    aux = [tex_path.with_suffix(ext) for ext in (".aux", ".out", ".toc")]
+    # The PDF's stat before pass 1 is the evidence of whether this run wrote
+    # it: an unchanged file is an earlier archive xelatex never touched ("No
+    # pages of output"), whatever the clocks say (a wall-clock test broke on
+    # skewed setups). No clock involved.
+    before = _file_signature(pdf)
     for run in (1, 2):
         # xelatex writes font names and file paths in whatever encoding the OS
         # hands it; decoding that as the Windows default raises inside
@@ -4095,29 +4101,47 @@ def compile_pdf(tex_path):
             # failed compile would leave a PDF that looks like an archive
             # (2.7.1 left pass-1 PDFs with an empty table of contents).
             # Remove what this run wrote and the aux files; keep the .tex and
-            # the .log. A PDF older than this run is an earlier archive xelatex
-            # never touched ("No pages of output"): leave it and say so. A file
-            # that cannot be removed (open in a viewer -- often the very reason
-            # xelatex failed) is reported, never a traceback.
+            # the .log. Every note below is true of the files as they are
+            # left: a file that cannot be removed (open in a viewer -- often
+            # the very reason xelatex failed) is named, never a traceback.
             notes = []
-            for ext in (".pdf", ".aux", ".out", ".toc"):
-                f = tex_path.with_suffix(ext)
-                if not f.exists():
-                    continue
-                if ext == ".pdf" and f.stat().st_mtime < started - 1:
-                    notes.append(f.name + " is from an earlier run and was left in place")
-                    continue
-                try:
-                    f.unlink()
-                except OSError as e:
-                    notes.append("could not remove " + f.name + ": " + (e.strerror or str(e)))
-            sys.exit("xelatex failed on pass " + str(run) + " (no PDF written this run; the "
-                     ".tex and its .log are beside it" + "".join("; " + n for n in notes)
-                     + "):\n" + tail)
-    for ext in (".aux", ".log", ".out", ".toc"):
-        tex_path.with_suffix(ext).unlink(missing_ok=True)
-    (tex_path.parent / "missfont.log").unlink(missing_ok=True)
-    return tex_path.with_suffix(".pdf")
+            after = _file_signature(pdf)
+            if after is None:
+                notes.append("no PDF written")
+            elif before is not None and after == before:
+                notes.append(pdf.name + " is from an earlier run and was left in place")
+            else:
+                failed = _remove([pdf])
+                notes.append("a partial " + pdf.name + " from this run could not be removed: " + failed[0][1]
+                             if failed else "this run's partial " + pdf.name + " was removed")
+            notes += ["could not remove " + name + ": " + why for name, why in _remove(aux)]
+            sys.exit("xelatex failed on pass " + str(run) + " (" + "; ".join(notes)
+                     + "; the .tex and its .log are beside it):\n" + tail)
+    _remove(aux + [tex_path.with_suffix(".log"), tex_path.parent / "missfont.log"])
+    return pdf
+
+
+def _file_signature(path):
+    """(mtime_ns, size) of a file, or None when it does not exist."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _remove(paths) -> list:
+    """Best-effort unlink. Returns (name, reason) for every file that stayed;
+    never raises -- a held file after a compile is a note, not a traceback."""
+    left = []
+    for f in paths:
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            left.append((f.name, e.strerror or str(e)))
+    return left
 
 
 # ---------------------------------------------------------------------------
@@ -5194,7 +5218,6 @@ def main(argv: list[str] | None = None) -> None:
 def _run(args, ap, projects_root: Path, cowork_root, archive_dir: Path, formats: tuple) -> None:
     if args.index:
         if args.watch:
-            import time
             period = max(30, args.watch)
             CON.say(f"watching: regenerating the index every {period}s (Ctrl+C to stop)")
             try:

@@ -3,6 +3,28 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.5 — 2026-09-03
+
+From the independent review of 2.7.4.
+
+**Fixed**
+- **An earlier run's PDF is recognised by its file signature, not by the
+  clock.** 2.7.4 compared the PDF's mtime with the run's start time, which a
+  skewed clock (WSL2 after a host sleep, a network share) defeats in either
+  direction; the PDF's mtime and size before pass one are now the evidence,
+  so an unchanged file is left in place and a changed one is this run's.
+- **The success-path cleanup never raises either.** A held aux file after a
+  good compile (a `.log` open in an editor, say) turned a finished PDF into a
+  traceback; both paths now use one best-effort removal.
+- **Every note in the failure message is true of the files as left**: "no PDF
+  written", "this run's partial X.pdf was removed", "a partial X.pdf from this
+  run could not be removed: reason", or "X.pdf is from an earlier run and was
+  left in place". The headline no longer says "no PDF written" when one is
+  there.
+- The Markdown emitter takes the `[ERROR]` marker as a `suffix` like the other
+  two, so the 90-character bound holds with the marker counted in; a stale
+  comment in the LaTeX emitter and a duplicate local `import time` are gone.
+
 ## 2.7.4 — 2026-09-03
 
 From the independent review of 2.7.3.
