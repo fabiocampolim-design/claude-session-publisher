@@ -3,6 +3,32 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.2 — 2026-09-02
+
+From the audit of 2.7.1: the suite and CI were green, the real-data survival
+run was not.
+
+**Fixed**
+- **`--format pdf` failed on every Windows session with a file-edit snapshot**
+  (regression in 2.7.1). The LaTeX title of a system-event box was shortened
+  *after* it had been escaped, so the 72-character cut could land inside a
+  `\textbackslash{}` and leave a bare `\tex`; xelatex stopped on pass 1 with
+  `Undefined control sequence`, the archiver exited 1, and a pass-one PDF with
+  an empty table of contents was left behind. The detail is now shortened as
+  raw text and escaped afterwards. Three real sessions that failed under 2.7.1
+  compile under 2.7.2 (60, 77 and 105 pages, table of contents present).
+- The suite renders a Windows-path snapshot title and compiles it under
+  xelatex when one is on `PATH` (section 39, three checks); the shipped
+  examples use POSIX paths, which is why 417 green checks never saw the cut.
+
+**Added**
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1) and
+  `docs/DESIGN.md` (the problem framing, each decision with its trade-off,
+  what was rejected, who decided what).
+- The vendored publishing checker is now 1.5.1 and pinned to LF in
+  `.gitattributes`, so a Windows checkout with `core.autocrlf` keeps it
+  byte-identical to the canonical copy.
+
 ## 2.7.1 — 2026-08-31
 
 From the independent review of 2.7.0.

@@ -57,7 +57,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.1"
+VERSION = "2.7.2"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -4004,10 +4004,14 @@ def emit_latex(t, ctx: dict, fragment: bool = False, tool_output: bool = False,
                              chrome(_("(image omitted in this format; the HTML archive holds it)"))
                              + "\n\n"))
             else:
-                badge = clabel(_(str(turn.get("badge", kind))))
+                # Shorten the raw words, then escape: a cut through an escaped
+                # string can land inside \textbackslash{} (2.7.1 left a bare
+                # \tex in every Windows file-edit snapshot title).
+                raw_badge = _(str(turn.get("badge", kind)))
+                badge = clabel(raw_badge)
                 if turn.get("detail"):
-                    badge += " - " + esc(str(turn["detail"]))
-                badge = shorten(badge)
+                    detail = shorten(str(turn["detail"]), max(12, 72 - len(raw_badge) - 3))
+                    badge += " - " + esc(detail)
                 verbatim_boxes("systurn", badge, ts, (turn.get("text") or "").rstrip())
 
     emit_turns(t.turns)

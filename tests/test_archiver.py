@@ -2207,6 +2207,51 @@ check("the plain note states the coverage and the floor",
       "restarts" in ta.reported_cost_note(_rc) and "floor" in ta.reported_cost_note(_rc), ta.reported_cost_note(_rc))
 check("CHANGELOG has the 2.7.1 entry", "## 2.7.1" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
+print("\n[39] A system-event title is shortened before it is escaped (2.7.2)")
+# 2.7.1 shortened the LaTeX box title *after* escaping it, so the 72-character
+# cut could land inside a \textbackslash{} and leave a bare \tex: xelatex then
+# failed on pass 1 for every real Windows session carrying a file-edit
+# snapshot, and left a PDF with an empty table of contents. The shipped
+# examples use POSIX paths, so the suite had never rendered such a title.
+_wd = pathlib.Path(tempfile.mkdtemp(prefix="ta-winpath-"))
+_wsid = "0000000b-ad5e-4000-8000-000000000042"
+_wpath = "C:\\codes\\alice\\Desktop\\a-project-with-a-long-name\\deeper\\still-deeper\\notes.md"
+_wrec = [
+    {"type": "user", "uuid": "w-u1", "parentUuid": None, "sessionId": _wsid, "cwd": "C:\\codes\\alice",
+     "version": "2.1.0", "timestamp": "2026-01-15T09:00:00Z",
+     "message": {"role": "user", "content": "please edit the notes"}},
+    {"type": "assistant", "uuid": "w-a1", "parentUuid": "w-u1", "sessionId": _wsid, "cwd": "C:\\codes\\alice",
+     "version": "2.1.0", "timestamp": "2026-01-15T09:00:05Z", "requestId": "req_w1",
+     "message": {"role": "assistant", "model": "claude-opus-5",
+                 "content": [{"type": "text", "text": "Done."}],
+                 "usage": {"input_tokens": 10, "output_tokens": 2}}},
+    {"type": "attachment", "uuid": "w-t1", "parentUuid": "w-a1", "sessionId": _wsid,
+     "timestamp": "2026-01-15T09:00:06Z",
+     "attachment": {"type": "edited_text_file", "filename": _wpath, "snippet": "line 1\nline 2"}},
+]
+_wsrc = _wd / f"{_wsid}.jsonl"
+_wsrc.write_text("\n".join(json.dumps(r) for r in _wrec) + "\n", encoding="utf-8")
+_wt = ta.parse_transcript(_wsrc, 16384)
+_wctx = {"title": "T", "session_id": _wsid, "subtitle": "s", "summary_text": "", "cost_note": ""}
+_wtex, _ = ta.emit_latex(_wt, _wctx, fragment=False, tool_output=False, agents=[])
+_wm = re.search(r"\\begin\{systurn\}\{(File edit snapshot[^\n]*)\}\n", _wtex)
+_wtitle = _wm.group(1) if _wm else ""
+check("the snapshot title is rendered and shortened", bool(_wm) and "..." in _wtitle, _wtitle[:120])
+_wwords = set(re.findall(r"\\([A-Za-z]+)", _wtitle))
+check("the shortened title holds no truncated control word",
+      _wwords <= {"textbackslash", "allowbreak", "hfill", "normalfont", "scriptsize", "ttfamily"},
+      f"control words {sorted(_wwords)} in {_wtitle[:120]}")
+if shutil.which("xelatex"):
+    (_wd / "doc.tex").write_text(_wtex, encoding="utf-8")
+    _wp = subprocess.run(["xelatex", "-interaction=nonstopmode", "-halt-on-error", "doc.tex"],
+                         capture_output=True, text=True, cwd=str(_wd), timeout=300)
+    check("a Windows-path snapshot compiles under xelatex on pass 1",
+          _wp.returncode == 0 and (_wd / "doc.pdf").exists(),
+          "\n".join(l for l in _wp.stdout.splitlines() if l.startswith("!"))[:300])
+else:
+    skip("a Windows-path snapshot compiles under xelatex on pass 1", "no xelatex")
+check("CHANGELOG has the 2.7.2 entry", "## 2.7.2" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
     skip("no file appeared in CLAUDE_ARCHIVE_DIR during the suite",

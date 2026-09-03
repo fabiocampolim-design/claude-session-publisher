@@ -47,7 +47,7 @@ python transcript_archiver.py --index          # rebuild the index page
 Full reference: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) (also as
 [HTML](docs/USER_MANUAL.html) and [PDF](docs/USER_MANUAL.pdf)) lists every
 option, output, feature and known limitation. Driving it with an AI agent?
-Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
+Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md); how to contribute is in [`CONTRIBUTING.md`](CONTRIBUTING.md) and the design trade-offs in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Features
 
@@ -129,7 +129,7 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
   and the suite compiles a table-heavy session and counts the pages to prove
   the rows arrived. A clean exit code is not evidence the content survived
   the typesetter.
-- Standard library only, one file, 417 checks in the test suite, pyflakes and
+- Standard library only, one file, 421 checks in the test suite, pyflakes and
   CI on Linux/Windows/macOS.
 
 ## How this compares
@@ -301,7 +301,7 @@ records, and each is now covered by a test:
 python tests/test_archiver.py
 ```
 
-417 checks, run against the synthetic sessions in `examples/` —
+421 checks, run against the synthetic sessions in `examples/` —
 self-contained, no real transcript needed. The LaTeX/PDF compile checks are
 skipped (not failed) when no TeX installation is on `PATH`; everything else
 needs only Python. The suite also verifies that the user manual and
@@ -349,7 +349,7 @@ pass, survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded — the last of them a table that
 compiled cleanly while dropping its rows), bringing the history to
 38 commits; the housekeeping that followed — keeping the vendored conformance
-checker byte-identical to the publishing playbook — brings it to 49 commits.
+checker byte-identical to the publishing playbook — brings it to 50 commits (2.7.2, a regression the real-data survival run caught after an all-green suite, is the fiftieth).
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy

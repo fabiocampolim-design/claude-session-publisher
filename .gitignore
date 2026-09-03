@@ -24,6 +24,8 @@ logs/
 !README.md
 !AGENTS.md
 !CHANGELOG.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
 !docs/*.md
 !docs/*.html
 !docs/*.pdf
