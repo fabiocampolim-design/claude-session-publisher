@@ -1,0 +1,89 @@
+name: Bug report
+description: Something rendered wrongly, was lost, or crashed
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. Before filling this in, please read the
+        *Reporting* section of [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md).
+
+        **Your transcript is your conversation.** If you attach source records,
+        paste only the offending ones plus a few around them — never the whole
+        `.jsonl` file — and remove anything you would not publish.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected instead
+      description: The concrete difference between the page you got and the page you wanted.
+      placeholder: |
+        A tool result rendered as an empty block. I expected the command output.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Output of `python transcript_archiver.py --version`."
+      placeholder: "2.7.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Fewer real sessions have been run on Linux and macOS, so those reports help most.
+      options:
+        - Windows
+        - Linux
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: The command you ran
+      description: >
+        The full command line, with `--format`, `--tool-output` and `--lang` if you
+        used them. Replace any directory that identifies you with a placeholder.
+      placeholder: "python transcript_archiver.py --format pdf --tool-output full --lang pt-BR --out <out-dir>"
+    validations:
+      required: true
+
+  - type: textarea
+    id: fidelity
+    attributes:
+      label: The fidelity block
+      description: >
+        Paste the fidelity report from the generated page. Its numbers say which
+        records were handled and which were not, and they are usually the fastest
+        route to the cause.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: records
+    attributes:
+      label: Source records (trimmed)
+      description: >
+        Optional but decisive for a rendering bug: the offending `.jsonl` records
+        plus a few around them. Trim first — this file holds your whole
+        conversation.
+      render: json
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Before submitting
+      options:
+        - label: I trimmed anything private out of the excerpts above.
+          required: true
+        - label: I checked that the same command fails on the latest release.
+          required: false

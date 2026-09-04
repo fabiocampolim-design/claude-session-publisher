@@ -1,0 +1,47 @@
+name: Feature request
+description: Propose a change before writing it
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        CONTRIBUTING.md asks for an issue first for anything larger than a typo,
+        so the scope is agreed before the work is done. The decisions already
+        taken, and what was rejected, are in
+        [`docs/DESIGN.md`](../blob/main/docs/DESIGN.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and where the tool got in the way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: >
+        The behaviour you want, including the flag or output shape if you have one
+        in mind. Say what should happen in the cases that are not the happy path.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you considered instead
+      description: Existing flags or post-processing you tried, and why they fell short.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This keeps the tool dependency-light — no new required runtime dependency.
+          required: false
+        - label: I am willing to open the pull request myself.
+          required: false
