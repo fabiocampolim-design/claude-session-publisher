@@ -349,7 +349,7 @@ pass, survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded — the last of them a table that
 compiled cleanly while dropping its rows), bringing the history to
 38 commits; the housekeeping that followed — keeping the vendored conformance
-checker byte-identical to the publishing playbook — brings it to 55 commits (2.7.2, a regression the real-data survival run caught after an all-green suite, 2.7.3–2.7.5, three rounds of independent review of its failure path, and 2.7.6, the review that followed the whole file line by line, are the last five).
+checker byte-identical to the publishing playbook — brings it to 56 commits (2.7.2, a regression the real-data survival run caught after an all-green suite, 2.7.3–2.7.5, three rounds of independent review of its failure path, and 2.7.6, the review that followed the whole file line by line, are the last five).
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy
