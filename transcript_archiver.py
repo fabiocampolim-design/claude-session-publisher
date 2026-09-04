@@ -58,7 +58,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.5"
+VERSION = "2.7.6"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -4273,10 +4273,16 @@ def _age_label(seconds: float) -> str:
     return f"{int(seconds // 86400)}d"
 
 
-_HUMAN_TURN_RE = re.compile(
-    r'<section class="turn human-turn" id="([^"]+)"[^>]*>.*?'
-    r'<span class="who">[^<]*(?: <span class="rtag" id="([^"]+)">[^<]*</span>)?</span>.*?'
-    r'<div class="turn-body"><div class="raw(?: mono)?">(.*?)</div></div>', re.S)
+# The index reader works one human-turn section at a time: the page is cut at
+# every section start, and the tag and body are looked up inside that one
+# section only. One regex spanning the whole page (2.7.5) let a section with
+# no verbatim body swallow the next prompt's text under its own anchor, and
+# its non-greedy spans scanned to the end of a large page for every section
+# that did not match.
+_HUMAN_TURN_START = '<section class="turn human-turn" id="'
+_HUMAN_TURN_RE = re.compile(r'^([^"]+)"[^>]*>(.*?)</section>', re.S)
+_HUMAN_TAG_RE = re.compile(r'<span class="rtag" id="([^"]+)">')
+_HUMAN_BODY_RE = re.compile(r'<div class="turn-body"><div class="raw(?: mono)?">(.*?)</div></div>', re.S)
 _SEARCH_TEXT_CAP = 400
 
 
@@ -4284,7 +4290,9 @@ def prompt_index_entry(archive_dir: Path, meta: dict) -> dict:
     """Every human prompt of one archive, with a deep link, for the index
     page's cross-archive search. Read back from the archive's own HTML (all
     pages of a paginated one), so archives written by earlier versions and
-    imports are covered alike; prompts without a P tag link to their turn."""
+    imports are covered alike; prompts without a P tag link to their turn.
+    A human-turn section without a verbatim body is skipped, never merged
+    with its neighbour."""
     prompts: list[dict] = []
     for page_name in (meta.get("pages") or [meta["file"]]):
         pf = archive_dir / page_name
@@ -4292,7 +4300,16 @@ def prompt_index_entry(archive_dir: Path, meta: dict) -> dict:
             text = pf.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for anchor, tag, body in _HUMAN_TURN_RE.findall(text):
+        for piece in text.split(_HUMAN_TURN_START)[1:]:
+            m = _HUMAN_TURN_RE.match(piece)
+            if not m:
+                continue
+            anchor, inner = m.group(1), m.group(2)
+            bm = _HUMAN_BODY_RE.search(inner)
+            if not bm:
+                continue
+            tm = _HUMAN_TAG_RE.search(inner)
+            tag, body = (tm.group(1) if tm else ""), bm.group(1)
             plain = html.unescape(re.sub(r"<[^>]+>", "", body))
             plain = " ".join(plain.split())
             if not plain:
@@ -5227,6 +5244,12 @@ def _run(args, ap, projects_root: Path, cowork_root, archive_dir: Path, formats:
                                 refresh=period)
                     time.sleep(period)
             except KeyboardInterrupt:
+                # The page written last carries the refresh tag; a browser
+                # left on it would reload a frozen index every `period`
+                # seconds. Write it once more without the tag.
+                CON.say("stopped; writing the index once more without the reload tag")
+                build_index(archive_dir, projects_root, archive_dir / "index.html",
+                            sessions=scan_all_sessions(projects_root, cowork_root))
                 return
         build_index(archive_dir, projects_root, archive_dir / "index.html",
                     sessions=scan_all_sessions(projects_root, cowork_root))

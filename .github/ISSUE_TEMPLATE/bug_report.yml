@@ -27,7 +27,7 @@ body:
     attributes:
       label: Version
       description: "Output of `python transcript_archiver.py --version`."
-      placeholder: "2.7.5"
+      placeholder: "2.7.6"
     validations:
       required: true
 

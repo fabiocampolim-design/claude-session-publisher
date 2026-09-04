@@ -2486,6 +2486,56 @@ check("Markdown: the errored tool head, marker included, stays within 90 charact
       bool(_emspan) and "..." in _emspan and len(_emspan) <= 90, f"{len(_emspan)}: {_emline[:160]}")
 check("CHANGELOG has the 2.7.5 entry", "## 2.7.5" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
+print("\n[37] The review of 2.7.5: a stopped watcher, and the index reader's section bounds")
+# (a) --index --watch stamps every page it writes with a meta refresh so the
+# browser follows the regeneration loop. When the loop stops (Ctrl+C), the
+# last page written must not keep reloading a frozen index: the final write
+# carries no refresh tag.
+_wd = pathlib.Path(tempfile.mkdtemp(prefix="ta-test37-"))
+try:
+    _wroot = _wd / "projects" / "proj"
+    _wroot.mkdir(parents=True)
+    shutil.copy(source_of(SAMPLE), _wroot / f"{SAMPLE}.jsonl")
+    _warch = _wd / "arch"
+    _wargs = ta.build_parser().parse_args(
+        ["--index", "--watch", "30", "--archive-dir", str(_warch),
+         "--projects-root", str(_wd / "projects"), "--cowork-root", ""])
+    _orig_sleep = ta.time.sleep
+
+    def _interrupt(_s):
+        raise KeyboardInterrupt
+
+    ta.time.sleep = _interrupt
+    try:
+        ta._run(_wargs, ta.build_parser(), _wd / "projects", None, _warch, ("html",))
+    finally:
+        ta.time.sleep = _orig_sleep
+    _widx = (_warch / "index.html").read_text(encoding="utf-8", errors="replace")
+    check("a stopped --watch leaves an index that does not reload itself",
+          "http-equiv" not in _widx, "meta refresh still stamped after Ctrl+C")
+    # (b) The cross-archive search reads prompts back from the archive HTML.
+    # A human-turn section that carries no verbatim body (a legacy or
+    # hand-edited page) must be skipped, not merged with the next section:
+    # the reader is bounded to one section at a time.
+    _wpage = (
+        '<section class="turn human-turn" id="turn-1" data-lane="human">'
+        '<div class="turn-label"><span class="who">Human</span></div>'
+        '<div class="turn-body"><p>(no verbatim body here)</p></div></section>\n'
+        '<section class="turn assistant-turn"><div class="turn-body"><p>reply</p></div></section>\n'
+        '<section class="turn human-turn" id="turn-2" data-lane="human">'
+        '<div class="turn-label"><span class="who">Human <span class="rtag" id="P2">P2</span></span></div>'
+        '<div class="turn-body"><div class="raw">second prompt text</div></div></section>\n')
+    (_warch / "legacy_page.html").write_text(_wpage, encoding="utf-8")
+    _went = ta.prompt_index_entry(_warch, {"session_id": "x", "title": "t", "file": "legacy_page.html"})
+    check("a human-turn section without a raw body is skipped by the index reader",
+          len(_went["prompts"]) == 1, str(_went["prompts"])[:200])
+    check("the prompt that follows keeps its own anchor and tag",
+          bool(_went["prompts"]) and _went["prompts"][0]["href"] == "legacy_page.html#P2"
+          and _went["prompts"][0]["text"] == "second prompt text", str(_went["prompts"])[:200])
+finally:
+    shutil.rmtree(_wd, ignore_errors=True)
+check("CHANGELOG has the 2.7.6 entry", "## 2.7.6" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
     skip("no file appeared in CLAUDE_ARCHIVE_DIR during the suite",

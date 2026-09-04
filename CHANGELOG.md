@@ -3,6 +3,31 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.6 — 2026-09-04
+
+From the independent review of 2.7.5, which read the whole file line by line
+(the earlier rounds reviewed the failure path only).
+
+**Fixed**
+- **A stopped `--index --watch` no longer leaves a self-reloading page.**
+  Every page the loop writes carries a `<meta http-equiv="refresh">` so the
+  browser follows the regeneration; after Ctrl+C the last page kept it, and a
+  browser left on the index reloaded a frozen page every N seconds. The loop
+  now writes the index once more, without the tag, before it returns.
+- **The cross-archive index reader is bounded to one section at a time.** It
+  read prompts back from the archive HTML with one regex spanning the page;
+  a human-turn section without a verbatim body (a legacy or hand-edited page)
+  made that regex run on into the *next* section and file the next prompt's
+  text under the wrong anchor, and every non-matching section cost a scan to
+  the end of the page. The page is now cut at each section start and the tag
+  and body are looked up inside that section only; a section with no body is
+  skipped.
+- The README's build story counts the commits again (55).
+
+**Checks**
+- 443 (was 439): the stopped watcher's final page, the reader's section
+  bound, and the changelog entry.
+
 ## 2.7.5 — 2026-09-03
 
 From the independent review of 2.7.4.
