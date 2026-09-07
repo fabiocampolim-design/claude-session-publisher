@@ -1,5 +1,5 @@
 # claude-session-publisher
-<!-- source-digest: 7393d862a28bb989 -->
+<!-- source-digest: d529d9e1192c700d -->
 
 [![Tests](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml/badge.svg)](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
@@ -401,7 +401,7 @@ escribir, y las correcciones que cada una exigió — la última de ellas una ta
 que compilaba limpiamente mientras perdía sus filas), llevando el historial a
 38 commits; el mantenimiento que siguió — mantener el verificador de
 conformidad *vendorizado* byte a byte idéntico al manual de publicación — lo
-lleva a 59 commits (2.7.2, una regresión que la ejecución de supervivencia con
+lleva a 61 commits (2.7.2, una regresión que la ejecución de supervivencia con
 datos reales detectó tras una batería toda verde, 2.7.3–2.7.7, cinco rondas
 de revisión independiente, cada una encontrando defectos reales en la
 corrección de la ronda anterior — siempre en su ruta de fallo, nunca en la ruta

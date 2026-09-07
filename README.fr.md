@@ -1,5 +1,5 @@
 # claude-session-publisher
-<!-- source-digest: 7393d862a28bb989 -->
+<!-- source-digest: d529d9e1192c700d -->
 
 [![Tests](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml/badge.svg)](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
@@ -406,7 +406,7 @@ d'enregistrements que Claude Code s'était mis à écrire, et les corrections
 exigées par chacun — la dernière étant un tableau qui compilait proprement tout
 en perdant ses lignes), portant l'historique à 38 commits ; l'entretien qui a
 suivi — garder le vérificateur de conformité *vendorisé* identique octet pour
-octet au manuel de publication — le porte à 59 commits (2.7.2, une régression
+octet au manuel de publication — le porte à 61 commits (2.7.2, une régression
 que l'exécution de survie sur données réelles a attrapée après une suite tout
 en vert, 2.7.3–2.7.7, cinq tours de relecture indépendante ayant chacun
 trouvé de vrais défauts dans la correction du tour précédent — toujours dans
