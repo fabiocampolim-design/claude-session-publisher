@@ -58,7 +58,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.6"
+VERSION = "2.7.7"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)
@@ -1268,6 +1268,27 @@ def human_html(text: str) -> str:
     body = "".join(parts)
     cls = "raw mono" if looks_columnar(text) else "raw"
     return f'<div class="{cls}">{body}</div>'
+
+
+def write_replacing(path: Path, text: str) -> None:
+    """Replace ``path`` in one step, or leave it exactly as it was.
+
+    ``Path.write_text`` truncates before it writes, so an interrupt or an
+    OSError landing inside it leaves a half-written file. For the index that
+    is worse than doing nothing: the archive's landing page is the one file a
+    reader opens first, and a --watch loop rewrites it every tick, so the
+    window is not rare (2.7.7). The temporary sits in the destination
+    directory, so the replace is on one filesystem.
+    """
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass                    # a leftover temporary is not worth a crash
 
 
 def truncate(s: str, n: int = 100) -> str:
@@ -4273,17 +4294,53 @@ def _age_label(seconds: float) -> str:
     return f"{int(seconds // 86400)}d"
 
 
-# The index reader works one human-turn section at a time: the page is cut at
-# every section start, and the tag and body are looked up inside that one
-# section only. One regex spanning the whole page (2.7.5) let a section with
-# no verbatim body swallow the next prompt's text under its own anchor, and
-# its non-greedy spans scanned to the end of a large page for every section
-# that did not match.
-_HUMAN_TURN_START = '<section class="turn human-turn" id="'
-_HUMAN_TURN_RE = re.compile(r'^([^"]+)"[^>]*>(.*?)</section>', re.S)
+# The index reader works one human-turn section at a time: each section start
+# is located, its end is the first </section> before the next start, and the
+# tag and body are looked up inside those bounds only. One regex spanning the
+# whole page (2.7.5) let a section with no verbatim body swallow the next
+# prompt's text under its own anchor. Cutting the page with str.split (2.7.6)
+# bounded it but held a second copy of every page at once (+77 MB on the
+# largest real archive, and 2.5x slower) and, by requiring the closing tag,
+# silently dropped the last prompt of any page a crash or a concurrent rewrite
+# had truncated. Slicing by offset (2.7.7) copies nothing: re.search takes pos
+# and endpos, so the bound costs no string at all.
+_HUMAN_TURN_START_RE = re.compile(r'<section class="turn human-turn" id="([^"]+)"[^>]*>')
 _HUMAN_TAG_RE = re.compile(r'<span class="rtag" id="([^"]+)">')
 _HUMAN_BODY_RE = re.compile(r'<div class="turn-body"><div class="raw(?: mono)?">(.*?)</div></div>', re.S)
 _SEARCH_TEXT_CAP = 400
+
+
+def page_prompts(text: str, page_name: str) -> list[dict]:
+    """The human prompts of one archive page, in order, each with the anchor
+    it links to. Bounded to one section at a time and allocating nothing the
+    size of the page -- the caller already holds it, and 2.7.6's str.split
+    held a second copy of it. Kept separate from the file reading so the
+    suite can measure exactly that."""
+    prompts: list[dict] = []
+    starts = list(_HUMAN_TURN_START_RE.finditer(text))
+    for i, sm in enumerate(starts):
+        lo = sm.end()
+        # The section ends at its own </section>; failing that -- a page cut
+        # short by a crashed run, or read while it was being rewritten -- at
+        # the next section start, or at the end of the page. Never past the
+        # next start, so a bodiless section still cannot reach into its
+        # neighbour, which is what 2.7.6 was written to stop.
+        hi = starts[i + 1].start() if i + 1 < len(starts) else len(text)
+        close = text.find("</section>", lo, hi)
+        if close != -1:
+            hi = close
+        bm = _HUMAN_BODY_RE.search(text, lo, hi)
+        if not bm:
+            continue
+        tm = _HUMAN_TAG_RE.search(text, lo, hi)
+        anchor, tag = sm.group(1), (tm.group(1) if tm else "")
+        plain = html.unescape(re.sub(r"<[^>]+>", "", bm.group(1)))
+        plain = " ".join(plain.split())
+        if not plain:
+            continue
+        prompts.append({"tag": tag, "href": f"{page_name}#{tag or anchor}",
+                        "text": plain[:_SEARCH_TEXT_CAP]})
+    return prompts
 
 
 def prompt_index_entry(archive_dir: Path, meta: dict) -> dict:
@@ -4295,27 +4352,11 @@ def prompt_index_entry(archive_dir: Path, meta: dict) -> dict:
     with its neighbour."""
     prompts: list[dict] = []
     for page_name in (meta.get("pages") or [meta["file"]]):
-        pf = archive_dir / page_name
         try:
-            text = pf.read_text(encoding="utf-8", errors="replace")
+            text = (archive_dir / page_name).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for piece in text.split(_HUMAN_TURN_START)[1:]:
-            m = _HUMAN_TURN_RE.match(piece)
-            if not m:
-                continue
-            anchor, inner = m.group(1), m.group(2)
-            bm = _HUMAN_BODY_RE.search(inner)
-            if not bm:
-                continue
-            tm = _HUMAN_TAG_RE.search(inner)
-            tag, body = (tm.group(1) if tm else ""), bm.group(1)
-            plain = html.unescape(re.sub(r"<[^>]+>", "", body))
-            plain = " ".join(plain.split())
-            if not plain:
-                continue
-            prompts.append({"tag": tag or "", "href": f"{page_name}#{tag or anchor}",
-                            "text": plain[:_SEARCH_TEXT_CAP]})
+        prompts.extend(page_prompts(text, page_name))
     return {"session_id": meta.get("session_id", ""), "title": meta.get("title") or "",
             "file": meta["file"], "prompts": prompts}
 
@@ -4524,7 +4565,7 @@ def build_index(archive_dir: Path, projects_root: Path, out_path: Path,
         index_css=_INDEX_CSS,
         index_js=_INDEX_JS,
     )
-    out_path.write_text(page, encoding="utf-8")
+    write_replacing(out_path, page)
     CON.say(f"wrote {out_path} ({len(sessions)} sessions, {counts['archived']} archived"
             + (f", {n_imported} imported" if n_imported else "") + ")")
 
@@ -5232,25 +5273,53 @@ def main(argv: list[str] | None = None) -> None:
             CON.detail(f"audit log: {path}")
 
 
+def _unstamp_index(archive_dir: Path, projects_root: Path, sessions, period: int) -> None:
+    """Rewrite the index without the reload tag, after a --watch loop stops.
+
+    Never raises: the loop is already over, and a traceback here would replace
+    the reason it stopped with one of its own -- a second Ctrl+C landed inside
+    2.7.6's handler and printed "another exception occurred". The note is
+    written *after* the attempt, so it is never a claim about a write that did
+    not happen (2.7.5's rule): if the rewrite fails, the page on disk really
+    does still reload itself, and the message says so.
+    """
+    out = archive_dir / "index.html"
+    try:
+        build_index(archive_dir, projects_root, out, sessions=sessions)
+        CON.say("stopped; the index no longer reloads itself")
+    except (KeyboardInterrupt, Exception) as e:      # noqa: B014 - KI is not an Exception
+        CON.note(f"note: could not rewrite {out} ({type(e).__name__}: {e}); it still "
+                 f"reloads itself every {period}s -- re-run with --index to replace it")
+
+
 def _run(args, ap, projects_root: Path, cowork_root, archive_dir: Path, formats: tuple) -> None:
     if args.index:
         if args.watch:
             period = max(30, args.watch)
             CON.say(f"watching: regenerating the index every {period}s (Ctrl+C to stop)")
+            sessions, stamped = None, False
             try:
                 while True:
+                    sessions = scan_all_sessions(projects_root, cowork_root)
                     build_index(archive_dir, projects_root, archive_dir / "index.html",
-                                sessions=scan_all_sessions(projects_root, cowork_root),
-                                refresh=period)
+                                sessions=sessions, refresh=period)
+                    stamped = True
                     time.sleep(period)
             except KeyboardInterrupt:
-                # The page written last carries the refresh tag; a browser
-                # left on it would reload a frozen index every `period`
-                # seconds. Write it once more without the tag.
-                CON.say("stopped; writing the index once more without the reload tag")
-                build_index(archive_dir, projects_root, archive_dir / "index.html",
-                            sessions=scan_all_sessions(projects_root, cowork_root))
-                return
+                pass
+            finally:
+                # Every page the loop wrote carries the refresh tag; a browser
+                # left on the last one would reload a frozen index every
+                # `period` seconds. Rewrite it once without the tag -- from a
+                # `finally`, because Ctrl+Break, a closed console window, a
+                # `taskkill /PID` and an error inside the loop all end the
+                # watch without ever raising KeyboardInterrupt, and 2.7.6
+                # covered only the one clean Ctrl+C. The sessions the last
+                # tick already scanned are reused: rescanning took ~14 s here,
+                # which is the whole window a second Ctrl+C used to land in.
+                if stamped:
+                    _unstamp_index(archive_dir, projects_root, sessions, period)
+            return
         build_index(archive_dir, projects_root, archive_dir / "index.html",
                     sessions=scan_all_sessions(projects_root, cowork_root))
         return

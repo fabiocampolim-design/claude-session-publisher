@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.7.6</p>
+<p class="subtitle">transcript_archiver.py v2.7.7</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -391,7 +391,8 @@ exit</td>
 <tr>
 <td><code>--watch SECONDS</code></td>
 <td>with <code>--index</code>: regenerate every SECONDS (minimum 30)
-until Ctrl+C, and stamp the page to reload itself</td>
+until Ctrl+C, and stamp the page to reload itself; on stopping, the
+index is written once more so it no longer reloads</td>
 </tr>
 </tbody>
 </table>
@@ -654,8 +655,16 @@ another transcript that is archived), <strong>legacy v1</strong>, or
 <strong>not archived</strong>; lists archives whose source is not on
 disk (claude.ai imports, deleted transcripts); and shows an activity
 column whose ages decay in the browser. Headers sort on click.
-<code>--watch</code> keeps it regenerating. A first <code>--index</code>
-into a directory that does not exist yet creates it.</p>
+<code>--watch</code> keeps it regenerating: each page it writes carries
+a <code>&lt;meta http-equiv=&quot;refresh&quot;&gt;</code> so a browser left open
+follows along. When the watch stops — Ctrl+C, a closed console, a
+<code>taskkill</code> on its PID — the index is written once more
+without that tag, so a page left open no longer reloads a frozen index
+every N seconds. If that last write cannot be made (the file is locked,
+the disk is full) the run says so and names what is still on disk;
+re-run with <code>--index</code> to replace it. A first
+<code>--index</code> into a directory that does not exist yet creates
+it.</p>
 <p><strong>Search across every archive.</strong> The index page carries
 a search box over every human prompt of every archive — all pages of a
 paginated archive and subagent prompts (<code>A1.P1</code>) included —
@@ -789,7 +798,7 @@ and is deferred.</li>
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>443 checks against the synthetic sessions in <code>examples/</code>
+<p>458 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>

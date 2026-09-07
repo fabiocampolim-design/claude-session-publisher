@@ -22,6 +22,12 @@ jobs:
       - name: Static check (pyflakes)
         run: |
           python -m pip install --quiet pyflakes
-          python -m pyflakes transcript_archiver.py tests docs examples
+          python -m pyflakes .
       - name: Run the suite (stdlib only)
         run: python tests/test_archiver.py
+      # The vendored-checker wiring test never ran on any runner until
+      # 2.7.7: its byte-identity half skips without the owner's private
+      # rules file, but the half that runs the checker works anywhere, and
+      # the drift it catches was red locally while CI stayed green.
+      - name: Run the remaining test files
+        run: python -m unittest discover -s tests

@@ -1,6 +1,6 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.7.6"
+subtitle: "transcript_archiver.py v2.7.7"
 ---
 
 # claude-session-publisher — User Manual
@@ -96,7 +96,7 @@ hard-coded. `--help` prints each option with its default.
 | Option | Meaning |
 |---|---|
 | `--index` | rebuild `index.html` in `--archive-dir` and exit |
-| `--watch SECONDS` | with `--index`: regenerate every SECONDS (minimum 30) until Ctrl+C, and stamp the page to reload itself |
+| `--watch SECONDS` | with `--index`: regenerate every SECONDS (minimum 30) until Ctrl+C, and stamp the page to reload itself; on stopping, the index is written once more so it no longer reloads |
 
 ### claude.ai import
 
@@ -243,8 +243,14 @@ A **safeguard refusal with model fallback** (Claude Code writes a `system/model_
 another transcript that is archived), **legacy v1**, or **not archived**;
 lists archives whose source is not on disk (claude.ai imports, deleted
 transcripts); and shows an activity column whose ages decay in the browser.
-Headers sort on click. `--watch` keeps it regenerating. A first `--index`
-into a directory that does not exist yet creates it.
+Headers sort on click. `--watch` keeps it regenerating: each page it writes
+carries a `<meta http-equiv="refresh">` so a browser left open follows along.
+When the watch stops — Ctrl+C, a closed console, a `taskkill` on its PID — the
+index is written once more without that tag, so a page left open no longer
+reloads a frozen index every N seconds. If that last write cannot be made
+(the file is locked, the disk is full) the run says so and names what is still
+on disk; re-run with `--index` to replace it. A first `--index` into a
+directory that does not exist yet creates it.
 
 **Search across every archive.** The index page carries a search box over
 every human prompt of every archive — all pages of a paginated archive and
@@ -366,7 +372,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-443 checks against the synthetic sessions in `examples/` (no real transcript
+458 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

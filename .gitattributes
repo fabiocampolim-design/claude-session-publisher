@@ -1,2 +1,3 @@
+* text=auto eol=lf
 tests/conformance.py text eol=lf
 tests/test_githubify_conformance.py text eol=lf

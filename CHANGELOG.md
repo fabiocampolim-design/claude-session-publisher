@@ -3,6 +3,76 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.7.7 — 2026-09-06
+
+From the independent review of 2.7.6 (ten finder angles, every finding
+reproduced before it was fixed). The pattern of the previous three rounds
+held: 2.7.6's own fix was correct on real data — old and new index readers
+agree on all 74 archives here, 877 prompts — and wrong in its failure path.
+
+**Fixed**
+- **Stopping a `--watch` no longer traces back.** 2.7.6 rescanned every
+  session inside its `except KeyboardInterrupt:` handler — ~14 s here — and a
+  second Ctrl+C landing in that window raised *during* the handling of the
+  first, printing a full traceback. The handler now reuses the sessions the
+  last tick already scanned, so the stop is immediate, and the rewrite itself
+  can no longer raise: a second Ctrl+C, a locked file or a full disk end the
+  run cleanly.
+- **The note about that rewrite is now true.** 2.7.6 printed
+  `writing the index once more without the reload tag` *before* attempting
+  it, so a failed write left the console and the audit log claiming a rewrite
+  that never happened while the page on disk kept reloading itself. The
+  message is written after the attempt; on failure it names the file, the
+  reason, and the fact that the page still reloads.
+- **The final rewrite happens however the watch ends.** It ran only for a
+  clean `KeyboardInterrupt`; Ctrl+Break, a closed console window, a
+  `taskkill /PID` and an error raised inside the loop all left the
+  self-reloading page behind. It is now a `finally`.
+- **`index.html` is replaced in one step.** `Path.write_text` truncates
+  before it writes, so an interrupt or an `OSError` inside it left the
+  archive's landing page half-written — worse than the stale page it was
+  replacing. It is written to a temporary beside it and renamed.
+- **A truncated page no longer loses its last prompt.** 2.7.6 required a
+  closing `</section>`, so a page left by a crashed run — or read by a
+  `--watch` tick while it was being rewritten — silently dropped its final
+  prompt from cross-archive search. The section now ends at its `</section>`,
+  or at the next section start, or at the end of the page.
+- **The index reader stops copying the page it reads.** 2.7.6 cut the page
+  with `str.split`, holding a second copy of every page at once: measured
+  +77 MB peak on the largest real archive and ~2.5× slower than 2.7.5, the
+  opposite of the change's stated rationale. Slicing by offset (`finditer`,
+  `str.find`, `re.search(pos, endpos)`) keeps 2.7.6's bound, fixes the
+  truncation loss, and is faster than either.
+- The bug-report form's example command line is now accepted by the parser:
+  it offered `--tool-output full` (the choices are `on|off`) and `--out` for
+  a directory (that is `--archive-dir`), so anyone who copied it — which is
+  what a placeholder is for — hit an argparse error while reproducing a bug.
+- `.gitattributes` pins `* text=auto eol=lf` repo-wide. The suite
+  byte-compares a rendered page against a baseline built from tracked
+  examples, which is exactly what rule 30 is about; only two files were
+  pinned.
+- **CI runs every test file and lints the whole tree.** The vendored-checker
+  wiring test had never run on any runner — the workflow invoked
+  `tests/test_archiver.py` alone — so its drift was red locally while CI
+  stayed green, which is exactly how the stale checker below survived. The
+  pyflakes step listed paths by hand; it is now `python -m pyflakes .`, which
+  cannot fall behind a new module.
+- The vendored conformance checker is re-synced (1.6.6). Eleven defects the
+  same review found in it were fixed upstream first, among them a shared
+  `rules.yaml` entry that crashed every vendored copy older than itself.
+- The suite's new block is `[43]`; 2.7.6 numbered it `[37]`, which was
+  already taken, so a failure reported "in [37]" named two different blocks.
+
+**Checks**
+- 462 (was 443). The 2.7.6 guard could not fail for its own reason: deleting
+  `refresh=period` from the watch loop — removing the feature the stop
+  behaviour exists to unwind — left the suite green, because the only
+  assertion was that the tag was *absent* afterwards. Block [43] asserts the
+  loop stamps its pages, that a second Ctrl+C and a failed write never trace
+  back, that the note matches what is on disk, that a failed write leaves the
+  previous page whole, that a truncated page keeps its last prompt, and that
+  the reader allocates less than the page it reads.
+
 ## 2.7.6 — 2026-09-04
 
 From the independent review of 2.7.5, which read the whole file line by line

@@ -2486,37 +2486,154 @@ check("Markdown: the errored tool head, marker included, stays within 90 charact
       bool(_emspan) and "..." in _emspan and len(_emspan) <= 90, f"{len(_emspan)}: {_emline[:160]}")
 check("CHANGELOG has the 2.7.5 entry", "## 2.7.5" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
-print("\n[37] The review of 2.7.5: a stopped watcher, and the index reader's section bounds")
-# (a) --index --watch stamps every page it writes with a meta refresh so the
-# browser follows the regeneration loop. When the loop stops (Ctrl+C), the
-# last page written must not keep reloading a frozen index: the final write
-# carries no refresh tag.
-_wd = pathlib.Path(tempfile.mkdtemp(prefix="ta-test37-"))
-try:
-    _wroot = _wd / "projects" / "proj"
-    _wroot.mkdir(parents=True)
-    shutil.copy(source_of(SAMPLE), _wroot / f"{SAMPLE}.jsonl")
-    _warch = _wd / "arch"
-    _wargs = ta.build_parser().parse_args(
-        ["--index", "--watch", "30", "--archive-dir", str(_warch),
-         "--projects-root", str(_wd / "projects"), "--cowork-root", ""])
-    _orig_sleep = ta.time.sleep
+print("\n[43] The review of 2.7.6: the stopped watcher's own failure path, and the reader's bounds")
+# 2.7.6 fixed the self-reloading page and bounded the index reader. The review
+# of that fix found the fix's failure path unguarded: a second Ctrl+C or a
+# locked file traced back, the note was printed before the write it promised,
+# a truncated page lost its last prompt, and nothing asserted the LOOP stamps
+# its pages at all -- deleting `refresh=period` left the suite green.
+_wd = pathlib.Path(tempfile.mkdtemp(prefix="ta-test43-"))
+
+
+def _watch_args(arch, projects):
+    return ta.build_parser().parse_args(
+        ["--index", "--watch", "30", "--archive-dir", str(arch),
+         "--projects-root", str(projects), "--cowork-root", ""])
+
+
+def _run_watch(arch, projects, stop_after=1, patch=None):
+    """One --watch run whose sleep raises KeyboardInterrupt, as Ctrl+C does.
+    `stop_after` bounds the loop independently of the sleep patch, so the
+    suite cannot hang if the loop ever stops calling time.sleep."""
+    ticks = {"n": 0}
+    orig_sleep, orig_build = ta.time.sleep, ta.build_index
+
+    def _guarded_build(*a, **k):
+        ticks["n"] += 1
+        out = orig_build(*a, **k)
+        if ticks["n"] > stop_after + 2:
+            raise AssertionError("the watch loop did not stop")
+        return out
 
     def _interrupt(_s):
         raise KeyboardInterrupt
 
     ta.time.sleep = _interrupt
+    ta.build_index = patch or _guarded_build
     try:
-        ta._run(_wargs, ta.build_parser(), _wd / "projects", None, _warch, ("html",))
+        ta._run(_watch_args(arch, projects), ta.build_parser(),
+                projects, None, arch, ("html",))
+        return None
+    except BaseException as e:                      # noqa: BLE001 - reported
+        return e
     finally:
-        ta.time.sleep = _orig_sleep
-    _widx = (_warch / "index.html").read_text(encoding="utf-8", errors="replace")
-    check("a stopped --watch leaves an index that does not reload itself",
-          "http-equiv" not in _widx, "meta refresh still stamped after Ctrl+C")
-    # (b) The cross-archive search reads prompts back from the archive HTML.
-    # A human-turn section that carries no verbatim body (a legacy or
-    # hand-edited page) must be skipped, not merged with the next section:
-    # the reader is bounded to one section at a time.
+        ta.time.sleep, ta.build_index = orig_sleep, orig_build
+
+
+try:
+    _wroot = _wd / "projects" / "proj"
+    _wroot.mkdir(parents=True)
+    shutil.copy(source_of(SAMPLE), _wroot / f"{SAMPLE}.jsonl")
+    _wprojects = _wd / "projects"
+
+    # (a) The page each tick writes carries the reload tag. Nothing asserted
+    # this: removing `refresh=period` from the loop left 443/443 green, so the
+    # feature the stop-behaviour exists to unwind was itself unguarded.
+    _warch = _wd / "arch-loop"
+    _seen = []
+    _orig_build = ta.build_index
+
+    def _capture(archive_dir, projects_root, out_path, sessions=None, refresh=None):
+        _seen.append(refresh)
+        return _orig_build(archive_dir, projects_root, out_path,
+                           sessions=sessions, refresh=refresh)
+
+    check("the --watch loop stamps the pages it writes with the reload tag",
+          _run_watch(_warch, _wprojects, patch=_capture) is None
+          and _seen and _seen[0] == 30, f"refresh values seen: {_seen}")
+    check("and the last page it leaves behind carries no reload tag",
+          _seen[-1] is None
+          and "http-equiv" not in (_warch / "index.html").read_text(encoding="utf-8"),
+          f"refresh values seen: {_seen}")
+
+    # (b) A second Ctrl+C, while the final index is being rewritten, must not
+    # trace back: the user asked to stop twice, not to see an exception raised
+    # during the handling of another exception.
+    _warch2 = _wd / "arch-2ndctrlc"
+    _n2 = {"n": 0}
+
+    def _second_ctrl_c(*a, **k):
+        _n2["n"] += 1
+        if _n2["n"] == 1:
+            return _orig_build(*a, **k)
+        raise KeyboardInterrupt                      # the impatient second Ctrl+C
+
+    check("a second Ctrl+C during the final index write never traces back",
+          _run_watch(_warch2, _wprojects, patch=_second_ctrl_c) is None,
+          "an exception escaped _run")
+
+    # (c) When the final write cannot be made, the run says so -- and says the
+    # true thing: the page left on disk still reloads itself. 2.7.6 printed
+    # "writing the index once more without the reload tag" *before* the write,
+    # so the audit log recorded a rewrite that never happened.
+    _warch3 = _wd / "arch-locked"
+    _n3 = {"n": 0}
+
+    def _locked(*a, **k):
+        _n3["n"] += 1
+        if _n3["n"] == 1:
+            return _orig_build(*a, **k)
+        raise OSError(13, "Permission denied")
+
+    _before = len(ta.CON.lines)
+    check("a failed final write never traces back either",
+          _run_watch(_warch3, _wprojects, patch=_locked) is None,
+          "an exception escaped _run")
+    _said = " | ".join(ta.CON.lines[_before:])
+    check("and the run does not claim a rewrite it did not make",
+          "no longer reloads" not in _said, _said[-300:])
+    check("and it says the page left behind still reloads itself",
+          "still reloads" in _said, _said[-300:])
+    check("the index left behind is a complete page, not a half-written one",
+          "</html>" in (_warch3 / "index.html").read_text(encoding="utf-8"), "truncated")
+
+    # (d) The index write replaces the page in one step. A plain write_text
+    # truncates first, so an interrupt or an OSError landing inside it left the
+    # archive's landing page corrupt -- worse than the stale page it replaced.
+    _warch4 = _wd / "arch-atomic"
+    _warch4.mkdir(parents=True)
+    ta.build_index(_warch4, _wprojects, _warch4 / "index.html",
+                   sessions=ta.scan_all_sessions(_wprojects, None))
+    _good = (_warch4 / "index.html").read_text(encoding="utf-8")
+    _orig_wt = pathlib.Path.write_text
+
+    def _fail_write(self, text, *a, **k):
+        # A truncate-then-fail, as a full disk or a dropped network share
+        # gives: half the page reaches the file before the error does.
+        if self.name.startswith("index.html"):
+            _orig_wt(self, text[: len(text) // 2], *a, **k)
+            raise OSError(28, "No space left on device")
+        return _orig_wt(self, text, *a, **k)
+
+    pathlib.Path.write_text = _fail_write
+    try:
+        try:
+            ta.build_index(_warch4, _wprojects, _warch4 / "index.html",
+                           sessions=ta.scan_all_sessions(_wprojects, None))
+        except OSError:
+            pass
+    finally:
+        pathlib.Path.write_text = _orig_wt
+    check("a failed index write leaves the previous page intact",
+          (_warch4 / "index.html").read_text(encoding="utf-8") == _good, "index.html was damaged")
+    check("and leaves no temporary file behind",
+          not [p for p in _warch4.iterdir() if p.suffix == ".tmp"],
+          str([p.name for p in _warch4.iterdir()]))
+
+    # (e) A human-turn section with no verbatim body is skipped, not merged
+    # with the next one (2.7.6), and the reader is bounded to one section.
+    _warch5 = _wd / "arch-read"
+    _warch5.mkdir(parents=True)
     _wpage = (
         '<section class="turn human-turn" id="turn-1" data-lane="human">'
         '<div class="turn-label"><span class="who">Human</span></div>'
@@ -2525,16 +2642,75 @@ try:
         '<section class="turn human-turn" id="turn-2" data-lane="human">'
         '<div class="turn-label"><span class="who">Human <span class="rtag" id="P2">P2</span></span></div>'
         '<div class="turn-body"><div class="raw">second prompt text</div></div></section>\n')
-    (_warch / "legacy_page.html").write_text(_wpage, encoding="utf-8")
-    _went = ta.prompt_index_entry(_warch, {"session_id": "x", "title": "t", "file": "legacy_page.html"})
+    (_warch5 / "legacy_page.html").write_text(_wpage, encoding="utf-8")
+    _went = ta.prompt_index_entry(_warch5, {"session_id": "x", "title": "t", "file": "legacy_page.html"})
     check("a human-turn section without a raw body is skipped by the index reader",
           len(_went["prompts"]) == 1, str(_went["prompts"])[:200])
     check("the prompt that follows keeps its own anchor and tag",
           bool(_went["prompts"]) and _went["prompts"][0]["href"] == "legacy_page.html#P2"
           and _went["prompts"][0]["text"] == "second prompt text", str(_went["prompts"])[:200])
+
+    # (f) A page whose last section was cut off -- a crashed run, or a --watch
+    # tick reading a page mid-rewrite -- still yields its last prompt. 2.7.6
+    # required a closing </section> and dropped it silently.
+    _cut = (
+        '<section class="turn human-turn" id="turn-1" data-lane="human">'
+        '<div class="turn-label"><span class="who">Human <span class="rtag" id="P1">P1</span></span></div>'
+        '<div class="turn-body"><div class="raw">first prompt</div></div></section>\n'
+        '<section class="turn human-turn" id="turn-2" data-lane="human">'
+        '<div class="turn-label"><span class="who">Human <span class="rtag" id="P2">P2</span></span></div>'
+        '<div class="turn-body"><div class="raw">second prompt</div></div>')
+    (_warch5 / "cut_page.html").write_text(_cut, encoding="utf-8")
+    _cent = ta.prompt_index_entry(_warch5, {"session_id": "y", "title": "t", "file": "cut_page.html"})
+    check("a truncated last section still yields its prompt",
+          [p["text"] for p in _cent["prompts"]] == ["first prompt", "second prompt"],
+          str(_cent["prompts"])[:200])
+    check("and each prompt keeps its own tag",
+          [p["tag"] for p in _cent["prompts"]] == ["P1", "P2"], str(_cent["prompts"])[:200])
+
+    # (g) The reader does not copy the page it parses. 2.7.6 cut the page with
+    # str.split, which holds a second copy of it as a list of substrings; the
+    # parse is measured on its own, with the page already in memory, because
+    # read_text's own transient buffers are ~3x the file and would hide the
+    # difference entirely (they did, on the first attempt at this check).
+    _big = "<html>" + ("x" * 2_000_000) + _cut + "</html>"
+    import tracemalloc as _tm
+    _tm.start()
+    _bigp = ta.page_prompts(_big, "big_page.html")
+    _peak = _tm.get_traced_memory()[1]
+    _tm.stop()
+    check("the index reader does not copy the page it parses",
+          _peak < len(_big) // 4 and len(_bigp) == 2,
+          f"peak {_peak} bytes parsing a {len(_big)}-byte page, {len(_bigp)} prompts")
 finally:
     shutil.rmtree(_wd, ignore_errors=True)
-check("CHANGELOG has the 2.7.6 entry", "## 2.7.6" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+
+# The bug-report form's example command line is a third copy of the CLI
+# surface; the parser-derived guard above covers the manual only. Every
+# reporter who copies the placeholder gets an argparse error otherwise.
+_bug_form = (HERE.parent / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml").read_text(encoding="utf-8")
+_placeholders = re.findall(r'placeholder:\s*"(python transcript_archiver\.py[^"]*)"', _bug_form)
+check("the bug form's example command line exists", bool(_placeholders), "no placeholder found")
+for _ph in _placeholders:
+    # <session-id>, <archive-dir> and friends stand for real values; give the
+    # parser one, rather than dropping the token and orphaning its flag.
+    _argv = [re.sub(r"^<.*>$", "x", a) for a in _ph.split()[2:]]
+    try:
+        ta.build_parser().parse_args(_argv)
+    except SystemExit as _e:
+        _ok, _why = _e.code in (None, 0), f"argparse rejected it: {_e.code}"
+    else:
+        _ok, _why = True, ""
+    check(f"the bug form's example parses: {_ph[:60]}", _ok, f"{_why} | {_ph}")
+
+_manual_watch = (HERE.parent / "docs" / "USER_MANUAL.md").read_text(encoding="utf-8", errors="replace")
+check("the manual documents what a stopped --watch leaves behind",
+      "--watch" in _manual_watch and "no longer reload" in _manual_watch.lower(),
+      "USER_MANUAL does not say what Ctrl+C leaves behind")
+check(".gitattributes pins the repo to LF, not only the vendored checker (rule 30)",
+      re.search(r"(?m)^\*\s+text=auto\s+eol=lf\s*$",
+                (HERE.parent / ".gitattributes").read_text(encoding="utf-8")), "no repo-wide pin")
+check("CHANGELOG has the 2.7.7 entry", "## 2.7.7" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:

@@ -50,7 +50,7 @@ body:
       description: >
         The full command line, with `--format`, `--tool-output` and `--lang` if you
         used them. Replace any directory that identifies you with a placeholder.
-      placeholder: "python transcript_archiver.py --format pdf --tool-output full --lang pt-BR --out <out-dir>"
+      placeholder: "python transcript_archiver.py <session-id> --format pdf --tool-output off --lang pt-BR --archive-dir <archive-dir>"
     validations:
       required: true
 
