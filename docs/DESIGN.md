@@ -161,5 +161,11 @@ but they could also just edit the archive.
   scan is the obvious next step for archives of hundreds of sessions.
 - **Search** covers prompts across archives; searching responses is not
   built.
-- **Translated documentation** (README and manual in pt-BR, es, de, fr) is
-  planned; English stays the source of truth.
+- **Claude Code's record types keep changing.** Six new ones appeared during
+  one week of August 2026 and were caught by survival runs, not by the suite.
+  There is no way to be notified; the mitigation is to keep running real
+  sessions through the tool before every tag.
+
+(Translated documentation — README and manual in pt-BR, es, de and fr —
+shipped in 2.8.0 with a digest-based staleness check; English remains the
+source of truth.)
