@@ -1,5 +1,5 @@
 # claude-session-publisher
-<!-- source-digest: 03d8d27d2947e2b1 -->
+<!-- source-digest: 7393d862a28bb989 -->
 
 [![Tests](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml/badge.svg)](https://github.com/fabiocampolim-design/claude-session-publisher/actions/workflows/tests.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
@@ -394,7 +394,7 @@ hatte, und die Korrekturen, die jeder davon verlangte — die letzte davon eine
 Tabelle, die sauber kompilierte und dabei ihre Zeilen verlor), was die
 Historie auf 38 Commits brachte; die anschließende Pflege — den *vendorierten*
 Konformitätsprüfer Byte für Byte identisch zum Publikationshandbuch zu halten —
-bringt sie auf 58 Commits (2.7.2, eine Regression, die der Überlebenslauf mit
+bringt sie auf 59 Commits (2.7.2, eine Regression, die der Überlebenslauf mit
 echten Daten nach einer durchweg grünen Suite aufdeckte, 2.7.3–2.7.7, fünf
 Runden unabhängiger Durchsicht, von denen jede echte Fehler in der Korrektur
 der vorigen Runde fand — stets in deren Fehlerpfad, nie im glücklichen Pfad —
