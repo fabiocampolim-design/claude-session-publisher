@@ -3,6 +3,72 @@
 All notable changes to claude-session-publisher. Versions are stamped into
 every archive (`archiver v…` in the fidelity report and the index).
 
+## 2.8.0 — 2026-09-07
+
+Documentation and repository standard. No change to the archiver's behaviour
+beyond the version stamp: `transcript_archiver.py` gained no feature and lost
+none, and every existing check still passes unchanged.
+
+**Added**
+- **The README and the user manual in four more languages** — Brazilian
+  Portuguese, Spanish, German and French, as `README.<lang>.md` and
+  `docs/USER_MANUAL.<lang>.md`, each built to committed HTML and PDF. English
+  remains the reference text; every page links all five.
+  This is *documentation* only, and is not the same thing as `--lang`, which
+  has translated the archiver's own words inside an archive since 2.7.0.
+- **A staleness contract for those translations.** Each one records the SHA-256
+  digest of the English text it was made from — a `<!-- source-digest: … -->`
+  comment in a README, a `source-digest:` front-matter line in a manual — and
+  the suite fails when the English has moved and the translation has not.
+  `python docs/build_manual.py --stamp` writes the digests, and is run *after*
+  a translation is brought up to date, never instead of doing it. The digest
+  deliberately ignores the check count, so a release that only bumps that
+  number does not mark four translations stale.
+- **`SECURITY.md`** — a private disclosure route (GitHub Security Advisories,
+  not the issue tracker), what is in and out of scope, and what the tool
+  actually touches: no network, no credentials, one subprocess (`xelatex`, as
+  an argument list, no shell), and writes confined to `--archive-dir`. It also
+  states plainly where the real attack surface is — **your transcript is the
+  untrusted input**, because with `--tool-output on` an archive carries
+  whatever a tool read or fetched, and the HTML and LaTeX escapes are what
+  stand between that and a document you hand to someone else.
+- **A threat note in `docs/DESIGN.md`** (§5) giving the reasoning behind it,
+  including why the tool does not redact and why that is safer than a filter
+  that catches most secrets.
+- **`docs/platforms.md`** — one dated row per platform actually run, with what
+  was run and what it produced, and an explicit section on what is *not*
+  verified (PDF on Linux and macOS; anything on a Mac beyond CI).
+- **`docs/THIRD_PARTY.md`** — the licence inventory: no runtime dependencies,
+  the two optional external programs, what the tool reads, the trademark
+  position on *Claude* and *Claude Code*, and the AI-usage disclosure.
+- **`.github/dependabot.yml`** watching the GitHub Actions that CI pins (there
+  is no pip ecosystem to watch).
+
+**Fixed**
+- CI linted a hand-written list of paths and ran one test file. It now runs
+  `python -m pyflakes .` and `python -m unittest discover -s tests`, so a new
+  module or a new test file cannot fall out of coverage — this is what had let
+  the vendored checker drift while CI stayed green.
+- `.gitattributes` pins `* text=auto eol=lf` repo-wide.
+- **`.gitignore` was silently swallowing new root-level documents.** It
+  ignores `*.md` at the repo root to keep generated archives out and
+  whitelists the files the repo needs; `SECURITY.md` and the four
+  translated READMEs were not on that list, so `git add` refused them.
+  They are whitelisted now, and the suite checks that each required
+  document is **tracked by git**, not merely present on disk — a check on
+  `exists()` alone passes on the machine that wrote the file and fails
+  only in CI, after the push.
+
+**Checks**
+- 528 (was 458). Block [44] guards the new documents: that they exist and are
+  not stubs, that `SECURITY.md` names a private route, that the platform rows
+  are dated and the unverified section survives, that every translation exists,
+  is built, carries a digest, is current with its English source, links every
+  other language, and quotes the same check count. Two of them read the code
+  rather than the prose: the archiver must import no network module and must
+  contain no `shell=True`, because `SECURITY.md` and the threat note say so and
+  a future import would make those sentences false without anyone noticing.
+
 ## 2.7.7 — 2026-09-06
 
 From the independent review of 2.7.6 (ten finder angles, every finding
@@ -57,7 +123,7 @@ agree on all 74 archives here, 877 prompts — and wrong in its failure path.
   stayed green, which is exactly how the stale checker below survived. The
   pyflakes step listed paths by hand; it is now `python -m pyflakes .`, which
   cannot fall behind a new module.
-- The vendored conformance checker is re-synced (1.6.6). Eleven defects the
+- The vendored conformance checker is re-synced (1.6.7). Eleven defects the
   same review found in it were fixed upstream first, among them a shared
   `rules.yaml` entry that crashed every vendored copy older than itself.
 - The suite's new block is `[43]`; 2.7.6 numbered it `[37]`, which was

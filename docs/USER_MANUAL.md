@@ -1,9 +1,11 @@
 ---
 title: "claude-session-publisher — User Manual"
-subtitle: "transcript_archiver.py v2.7.7"
+subtitle: "transcript_archiver.py v2.8.0"
 ---
 
 # claude-session-publisher — User Manual
+
+**English** · [Português (Brasil)](USER_MANUAL.pt-BR.md) · [Español](USER_MANUAL.es.md) · [Deutsch](USER_MANUAL.de.md) · [Français](USER_MANUAL.fr.md)
 
 `transcript_archiver.py` turns a Claude conversation into a self-contained
 document — HTML, plain text, Markdown, LaTeX or PDF — with a fidelity report
@@ -372,7 +374,7 @@ These are the honest edges. Each is stated on the page where it applies.
 python tests/test_archiver.py
 ```
 
-458 checks against the synthetic sessions in `examples/` (no real transcript
+528 checks against the synthetic sessions in `examples/` (no real transcript
 needed). LaTeX/PDF compile checks are skipped, not failed, when no TeX is on
 `PATH`. To exercise it on a conversation of your own:
 

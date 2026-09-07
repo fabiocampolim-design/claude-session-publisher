@@ -82,7 +82,75 @@ each came from a real failure found by running the tool on the author's own
 archive, and each became a rule in the publishing playbook the author's
 other repositories follow.
 
-## 5. Open questions
+## 5. Threat note
+
+The disclosure policy and the practical summary are in
+[`SECURITY.md`](../SECURITY.md); this section is the reasoning behind it.
+
+**The trust boundary is the transcript, not the network.** There is no
+network: no HTTP client, no update check, no telemetry, nothing listening.
+There are no credentials: no API key, no token, no config file. That removes
+most of the surface a tool like this would normally have, and concentrates
+what is left in one place — the transcript is untrusted input, and the tool's
+whole job is to render it.
+
+It is untrusted because of what a session contains. With `--tool-output on`
+(the default) an archive carries the full input and output of every tool call:
+files the session read, pages it fetched, command output. None of that is
+authored by the user or the model. A hostile string in a fetched page is,
+after archiving, a hostile string inside a document you may hand to someone
+else.
+
+Three consequences shaped the design:
+
+1. **Escaping is a correctness property, not a formality.** Every piece of
+   transcript text reaches HTML through `html.escape` and LaTeX through the
+   escaper in the LaTeX writer; verbatim blocks are set as verbatim
+   environments rather than escaped inline. The index page embeds the
+   cross-archive search corpus as JSON inside `<script type="application/
+   json">` with `</` escaped so the block cannot be closed early, and its
+   renderer passes every field — text, tag, title, href — through
+   `escapeHtml` before it reaches `innerHTML`. A break-out of either escape
+   is the most valuable bug report this project can receive.
+
+2. **The typesetter is the one subprocess, and it is powerful.** XeLaTeX can
+   read and write files. It is invoked as an argument list with no shell, and
+   no argument is built from transcript content — only the `.tex` basename,
+   with `cwd` set to that file's directory. The exposure that remains is
+   *inside* the document: a string that escapes into a control sequence would
+   be executed by the engine. That is why LaTeX escaping is tested against
+   real archives rather than trusted, and why a clean exit code is never
+   taken as evidence the content survived (v2.6.4: a 300-row table compiled
+   to zero rows while xelatex exited 0).
+
+3. **The tool does not redact, and says so.** An archive is faithful by
+   design — that is the product — so a credential that appeared in a session
+   appears in its archive. No secret-scrubbing filter has ever been built
+   into it, and the reasoning for leaving it that way is that a filter
+   catching most secrets teaches people to trust it for all of them: a
+   faithful archive you are told to read before sharing is safer than a
+   filtered one you are invited not to. `--tool-output off` is the blunt
+   instrument for the cases where that is not enough. If this is ever
+   revisited, it belongs in §3 as a decision with its trade-off, not as a
+   quiet feature.
+
+**Writes are bounded and non-destructive.** Output goes under `--archive-dir`,
+the `--out` stem, or `--log-dir`, and nothing else is touched. The only files
+the tool deletes are the `.aux`/`.out`/`.toc`/`.log` XeLaTeX itself wrote
+beside the `.tex`, plus a partial PDF from a compile that failed — never an
+earlier good PDF, which is recognised by its file signature taken before the
+first pass rather than by a clock. `index.html` is written to a temporary and
+renamed into place, so an interrupt or a locked file leaves the previous page
+intact rather than a truncated one.
+
+**What is deliberately not defended.** The tool trusts the machine it runs
+on. It does not verify that a transcript was really written by Claude Code,
+does not sign archives, and does not protect an archive from whoever can read
+the directory it was written to. Someone who can write to your
+`--projects-root` can put anything they like into an archive you generate —
+but they could also just edit the archive.
+
+## 6. Open questions
 
 - **PDF on macOS** and TeX fonts on Linux are unverified by a real run; CI
   runs the suite without TeX on all three platforms.

@@ -6,6 +6,8 @@
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#requirements)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
+**English** · [Português (Brasil)](README.pt-BR.md) · [Español](README.es.md) · [Deutsch](README.de.md) · [Français](README.fr.md)
+
 Turn a Claude Code session into a single self-contained document — HTML, plain
 text, Markdown, LaTeX or PDF — with a fidelity report proving nothing was
 silently dropped.
@@ -47,7 +49,7 @@ python transcript_archiver.py --index          # rebuild the index page
 Full reference: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) (also as
 [HTML](docs/USER_MANUAL.html) and [PDF](docs/USER_MANUAL.pdf)) lists every
 option, output, feature and known limitation. Driving it with an AI agent?
-Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md); how to contribute is in [`CONTRIBUTING.md`](CONTRIBUTING.md) and the design trade-offs in [`docs/DESIGN.md`](docs/DESIGN.md).
+Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md); how to contribute is in [`CONTRIBUTING.md`](CONTRIBUTING.md) and the design trade-offs — including the threat note — in [`docs/DESIGN.md`](docs/DESIGN.md). Security policy: [`SECURITY.md`](SECURITY.md). What it depends on and what it reproduces: [`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md). Where it has actually been run: [`docs/platforms.md`](docs/platforms.md).
 
 ## Features
 
@@ -129,7 +131,7 @@ Hand it [`AGENTS.md`](AGENTS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md);
   and the suite compiles a table-heavy session and counts the pages to prove
   the rows arrived. A clean exit code is not evidence the content survived
   the typesetter.
-- Standard library only, one file, 458 checks in the test suite, pyflakes and
+- Standard library only, one file, 528 checks in the test suite, pyflakes and
   CI on Linux/Windows/macOS.
 
 ## How this compares
@@ -301,7 +303,7 @@ records, and each is now covered by a test:
 python tests/test_archiver.py
 ```
 
-458 checks, run against the synthetic sessions in `examples/` —
+528 checks, run against the synthetic sessions in `examples/` —
 self-contained, no real transcript needed. The LaTeX/PDF compile checks are
 skipped (not failed) when no TeX installation is on `PATH`; everything else
 needs only Python. The suite also verifies that the user manual and
@@ -349,7 +351,7 @@ pass, survival runs that caught six new record types Claude Code had started
 writing, and the fixes each of those demanded — the last of them a table that
 compiled cleanly while dropping its rows), bringing the history to
 38 commits; the housekeeping that followed — keeping the vendored conformance
-checker byte-identical to the publishing playbook — brings it to 57 commits (2.7.2, a regression the real-data survival run caught after an all-green suite, and 2.7.3–2.7.7, five rounds of independent review, each finding real defects in the previous round's fix — always in its failure path, never on the happy path — are the last six).
+checker byte-identical to the publishing playbook — brings it to 58 commits (2.7.2, a regression the real-data survival run caught after an all-green suite, 2.7.3–2.7.7, five rounds of independent review, each finding real defects in the previous round's fix — always in its failure path, never on the happy path — and 2.8.0, which brought the repository up to the product standard (security policy, platform record, third-party inventory) and translated the README and manual into four more languages, are the last seven).
 
 The division of labour, reconstructed from those same transcripts and stated
 in [CRediT](https://credit.niso.org/) terms (the contributor-roles taxonomy

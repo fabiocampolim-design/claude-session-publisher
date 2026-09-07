@@ -2712,6 +2712,123 @@ check(".gitattributes pins the repo to LF, not only the vendored checker (rule 3
                 (HERE.parent / ".gitattributes").read_text(encoding="utf-8")), "no repo-wide pin")
 check("CHANGELOG has the 2.7.7 entry", "## 2.7.7" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
 
+print("\n[44] The product standard: security, platforms, third parties, and the translated docs")
+# Rules 32-35 of the publication playbook. These are documents, so the suite
+# guards that they exist, are not stubs, and stay true -- a platforms file
+# that lists a platform nobody ran, or a translation left behind by an
+# English edit, is worse than none.
+_bm_spec = importlib.util.spec_from_file_location("bm", HERE.parent / "docs" / "build_manual.py")
+_bm = importlib.util.module_from_spec(_bm_spec)
+_bm_spec.loader.exec_module(_bm)
+
+def _tracked(rel: str):
+    """Whether git tracks `rel` -- None outside a checkout. Presence on disk
+    is not enough: .gitignore blocks `*.md` at the repo root to keep generated
+    archives out, so a new root-level document is silently never committed
+    unless it is whitelisted. SECURITY.md and the four translated READMEs both
+    hit this in 2.8.0, and a check on `exists()` alone would have passed here
+    and failed only in CI, after the push."""
+    try:
+        p = subprocess.run(["git", "ls-files", "--error-unmatch", "--", rel],
+                           cwd=str(HERE.parent), capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return p.returncode == 0
+
+
+for _rel, _least in (("SECURITY.md", 800), (".github/dependabot.yml", 150),
+                     ("docs/platforms.md", 800), ("docs/THIRD_PARTY.md", 800)):
+    _p = HERE.parent / _rel
+    check(f"{_rel} exists and is not a stub",
+          _p.exists() and len(_p.read_text(encoding="utf-8")) >= _least,
+          f"{'missing' if not _p.exists() else len(_p.read_text(encoding='utf-8'))} bytes")
+    _t = _tracked(_rel)
+    if _t is None:
+        skip(f"{_rel} is tracked by git", "not a git checkout")
+    else:
+        check(f"{_rel} is tracked by git", _t, "present on disk but ignored -- whitelist it in .gitignore")
+
+_sec = (HERE.parent / "SECURITY.md").read_text(encoding="utf-8")
+check("SECURITY.md names a private reporting route, not an issue tracker",
+      "security/advisories/new" in _sec and "do not open a public issue" in _sec.lower(), "no advisory route")
+_design = (HERE.parent / "docs" / "DESIGN.md").read_text(encoding="utf-8")
+_flat = lambda s: " ".join(s.split())                                    # noqa: E731
+check("SECURITY.md and the threat note agree: no network, no shell",
+      "There is no network" in _flat(_design) and "shell=True" in _sec,
+      "the threat note and SECURITY.md disagree")
+check("docs/DESIGN.md carries the threat note (rule 34)",
+      "## 5. Threat note" in _design and "trust boundary" in _design, "no threat note")
+
+# The tool really must have no network client: the threat note says so, and a
+# future import would make that sentence false without anyone noticing.
+_src_net = SCRIPT.read_text(encoding="utf-8")
+check("the archiver imports no network module",
+      not re.search(r"(?m)^\s*(?:import|from)\s+(urllib|http|socket|ssl|requests|ftplib|smtplib)\b",
+                    _src_net), "a network import appeared -- SECURITY.md and DESIGN.md say there is none")
+check("and opens no subprocess through a shell",
+      "shell=True" not in _src_net, "shell=True appeared")
+
+_plat = (HERE.parent / "docs" / "platforms.md").read_text(encoding="utf-8")
+check("docs/platforms.md dates every row it claims (rule 24/33)",
+      len(re.findall(r"(?m)^\| 20\d\d-\d\d-\d\d \|", _plat)) >= 3, "fewer than three dated rows")
+check("docs/platforms.md still states what is unverified",
+      "not verified" in _plat.lower() and "macOS" in _plat, "no unverified section")
+
+# Rule 32: English first, then pt-BR, es, de, fr -- README and manual alike.
+for _lang in _bm.DOC_LANGS:
+    for _rel in (f"README.{_lang}.md", f"docs/USER_MANUAL.{_lang}.md"):
+        check(f"{_rel} exists", (HERE.parent / _rel).exists(), "missing")
+        _t = _tracked(_rel)
+        if _t is None:
+            skip(f"{_rel} is tracked by git", "not a git checkout")
+        else:
+            check(f"{_rel} is tracked by git", _t,
+                  "present on disk but ignored -- whitelist it in .gitignore")
+for _lang in _bm.DOC_LANGS:
+    for _ext in ("html", "pdf"):
+        _rel = f"docs/USER_MANUAL.{_lang}.{_ext}"
+        check(f"{_rel} is built and committed",
+              (HERE.parent / _rel).exists() and (HERE.parent / _rel).stat().st_size > 10_000, "missing or tiny")
+
+# The staleness contract: a translation records the digest of the English it
+# was made from. An English edit without a matching translation edit fails
+# here rather than shipping a page that quietly says something else.
+for _row in _bm.translation_status(HERE.parent):
+    _name = _row["path"].name
+    if not _row["exists"]:
+        continue
+    check(f"{_name} carries a source digest", _row["have"] is not None,
+          "no source-digest marker")
+    check(f"{_name} is current with its English source", _row["have"] == _row["want"],
+          f"stamped {_row['have']}, English is now {_row['want']} -- update the translation, "
+          "then `python docs/build_manual.py --stamp`")
+
+# Every README links every language, in both directions.
+for _lang in ("", *_bm.DOC_LANGS):
+    _rel = "README.md" if not _lang else f"README.{_lang}.md"
+    _txt = (HERE.parent / _rel).read_text(encoding="utf-8")
+    _missing = [o for o in _bm.DOC_LANGS if o != _lang and f"README.{o}.md" not in _txt]
+    if _lang:
+        _missing += [] if "README.md" in _txt else ["README.md"]
+    check(f"{_rel} links every other language", not _missing, f"missing: {_missing}")
+
+# A translation that still quotes an old check count is stale in the way
+# readers notice first. The number is compared with the English README's --
+# not with the live counter, which is still climbing while this runs -- and
+# the README's own number is checked against the real total at the end of
+# this file. The CRediT table's historical "296-check test suite" is a
+# statement about the past and is deliberately left alone.
+_readme_n = re.search(r"one file, (\d{3,4}) checks", (HERE.parent / "README.md").read_text(encoding="utf-8"))
+check("the English README states its check count in the guarded form", bool(_readme_n), "not found")
+for _lang in _bm.DOC_LANGS:
+    for _rel in (f"README.{_lang}.md", f"docs/USER_MANUAL.{_lang}.md"):
+        _txt = (HERE.parent / _rel).read_text(encoding="utf-8")
+        check(f"{_rel} quotes the same check count as the English README",
+              bool(_readme_n) and _readme_n.group(1) in _txt,
+              f"does not mention {_readme_n.group(1) if _readme_n else '?'}")
+
+check("CHANGELOG has the 2.8.0 entry", "## 2.8.0" in (HERE.parent / "CHANGELOG.md").read_text(encoding="utf-8"), "missing")
+
 print("\n[36] The suite leaves the user's real archive untouched")
 if _ARCHIVE_BEFORE is None:
     skip("no file appeared in CLAUDE_ARCHIVE_DIR during the suite",

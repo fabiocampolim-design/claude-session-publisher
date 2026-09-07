@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="de" xml:lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10.2" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>claude-session-publisher — Benutzerhandbuch</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+  <style type="text/css">body{font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#22221f;background:#faf7f0}h1{font-size:1.6rem;border-bottom:1px solid #999;padding-bottom:.2rem;margin-top:2rem}h2{font-size:1.25rem;margin-top:1.6rem}table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border:1px solid #bbb;padding:.3rem .5rem;text-align:left;vertical-align:top}th{background:#eeebe2}pre,code{font-family:ui-monospace,Consolas,monospace;font-size:.86rem}pre{background:#eeebe2;padding:.6rem;overflow-x:auto}@media(prefers-color-scheme:dark){body{color:#e9e6dc;background:#14140f}th,pre{background:#201e17}}</style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">claude-session-publisher — Benutzerhandbuch</h1>
+<p class="subtitle">transcript_archiver.py v2.8.0</p>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#claude-session-publisher-benutzerhandbuch" id="toc-claude-session-publisher-benutzerhandbuch">claude-session-publisher
+— Benutzerhandbuch</a>
+<ul>
+<li><a href="#schnellstart" id="toc-schnellstart">1.
+Schnellstart</a></li>
+<li><a href="#quellen" id="toc-quellen">2. Quellen</a></li>
+<li><a href="#referenz-der-kommandozeile" id="toc-referenz-der-kommandozeile">3. Referenz der Kommandozeile</a>
+<ul>
+<li><a href="#positionsargument" id="toc-positionsargument">Positionsargument</a></li>
+<li><a href="#auffinden-und-ablage" id="toc-auffinden-und-ablage">Auffinden und Ablage</a></li>
+<li><a href="#inhalt" id="toc-inhalt">Inhalt</a></li>
+<li><a href="#index" id="toc-index">Index</a></li>
+<li><a href="#claude.ai-import" id="toc-claude.ai-import">claude.ai-Import</a></li>
+<li><a href="#ausgabesteuerung-und-protokollierung" id="toc-ausgabesteuerung-und-protokollierung">Ausgabesteuerung und
+Protokollierung</a></li>
+</ul></li>
+<li><a href="#was-erzeugt-wird" id="toc-was-erzeugt-wird">4. Was erzeugt
+wird</a>
+<ul>
+<li><a href="#dateien" id="toc-dateien">Dateien</a></li>
+<li><a href="#die-seite" id="toc-die-seite">Die Seite</a></li>
+<li><a href="#sprache" id="toc-sprache">Sprache</a></li>
+<li><a href="#referenzmarken" id="toc-referenzmarken">Referenzmarken</a></li>
+<li><a href="#treuebericht" id="toc-treuebericht">Treuebericht</a></li>
+<li><a href="#verbrauch-und-kosten" id="toc-verbrauch-und-kosten">Verbrauch und Kosten</a></li>
+<li><a href="#die-bedienelemente-der-html-seite" id="toc-die-bedienelemente-der-html-seite">Die Bedienelemente der
+HTML-Seite</a></li>
+<li><a href="#der-index" id="toc-der-index">Der Index</a></li>
+</ul></li>
+<li><a href="#latex-und-pdf" id="toc-latex-und-pdf">5. LaTeX und
+PDF</a></li>
+<li><a href="#protokollierung-und-prüfung" id="toc-protokollierung-und-prüfung">6. Protokollierung und
+Prüfung</a></li>
+<li><a href="#bekannte-einschränkungen" id="toc-bekannte-einschränkungen">7. Bekannte Einschränkungen</a></li>
+<li><a href="#tests" id="toc-tests">8. Tests</a></li>
+<li><a href="#dieses-handbuch-bauen" id="toc-dieses-handbuch-bauen">9.
+Dieses Handbuch bauen</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="claude-session-publisher-benutzerhandbuch">claude-session-publisher
+— Benutzerhandbuch</h1>
+<p><a href="USER_MANUAL.md">English</a> · <a href="USER_MANUAL.pt-BR.md">Português (Brasil)</a> · <a href="USER_MANUAL.es.md">Español</a> · <strong>Deutsch</strong> · <a href="USER_MANUAL.fr.md">Français</a></p>
+<p><em>Übersetzung des englischen Handbuchs, das die Referenz bleibt;
+Befehle, Dateinamen, Optionen und Codeblöcke stehen wie im
+Original.</em></p>
+<p><code>transcript_archiver.py</code> verwandelt ein Claude-Gespräch in
+ein in sich geschlossenes Dokument — HTML, reiner Text, Markdown, LaTeX
+oder PDF — mit einem Treuebericht, der jeden Quelldatensatz mit dem
+abgleicht, was die Seite zeigt. Dieses Handbuch ist die vollständige
+Referenz: jede Option, jede Ausgabe, jede Funktion und jede bekannte
+Einschränkung. Das README ist die Produktseite; <code>AGENTS.md</code>
+enthält dieselbe Information, geschrieben für einen KI-Agenten, der das
+Werkzeug bedient.</p>
+<p>Eine Datei, Python 3.9+, nur Standardbibliothek. Kein
+Installationsschritt:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="at">--version</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="at">--help</span></span></code></pre></div>
+<h2 id="schnellstart">1. Schnellstart</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># eine Claude-Code-Sitzung als HTML archivieren (das Standardformat)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="op">&lt;</span>session-id<span class="op">&gt;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="co"># alle Formate auf einmal</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="op">&lt;</span>session-id<span class="op">&gt;</span> --format html,text,markdown,latex,pdf</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># die Indexseite von allem auf der Festplatte neu erzeugen</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py <span class="at">--index</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># am mitgelieferten Schaugespräch ausprobieren</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> transcript_archiver.py 0000c0de-cafe-4000-8000-00000000f00d <span class="dt">\</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">--projects-root</span> examples <span class="at">--archive-dir</span> demo <span class="at">--format</span> html,markdown,pdf</span></code></pre></div>
+<p>Die Sitzungs-ID ist der Name der <code>.jsonl</code>-Datei unter
+<code>~/.claude/projects/&lt;project&gt;/</code>. <code>--index</code>
+listet jede Sitzung, die es finden kann, mit ID und Titel — führen Sie
+es zuerst aus, wenn Sie die ID nicht kennen.</p>
+<h2 id="quellen">2. Quellen</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Quelle</th>
+<th>Wie</th>
+<th>Anmerkungen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code CLI / Desktop-App</td>
+<td>Vorgabe; Sitzungen unter <code>--projects-root</code>
+(<code>~/.claude/projects</code>)</td>
+<td>natives Format</td>
+</tr>
+<tr>
+<td>Claude Code Web/Mobil, zu Ihrem Rechner überbrückt</td>
+<td>dasselbe</td>
+<td>Brückendatensätze werden in der Kette zu einem Gespräch
+aufgelöst</td>
+</tr>
+<tr>
+<td><em>Cowork</em> von Claude Desktop (lokaler Agentenmodus)</td>
+<td><code>--cowork-root</code> (je Plattform automatisch erkannt)</td>
+<td>gleiches Datensatzschema, anderes Basisverzeichnis;
+<code>audit.jsonl</code> wird übersprungen. Nur gegen synthetische Daten
+geprüft</td>
+</tr>
+<tr>
+<td>claude.ai-Chats, Claude-Desktop-Chat, mobile App</td>
+<td><code>--import-claude-ai conversations.json</code></td>
+<td>aus Settings → Privacy → Export data. Nur eigenständige Chats; keine
+Projektgespräche, keine Verbrauchs- oder Modelldaten (die Seite sagt
+das)</td>
+</tr>
+<tr>
+<td>Claude-Code-Cloud-Sitzungen ohne Brücke</td>
+<td>nicht archivierbar</td>
+<td>auf Ihre Festplatte wird nichts geschrieben</td>
+</tr>
+</tbody>
+</table>
+<p>Automatische <em>Cowork</em>-Erkennung:
+<code>%APPDATA%\Claude\local-agent-mode-sessions</code> unter Windows,
+<code>~/Library/Application Support/Claude/local-agent-mode-sessions</code>
+unter macOS, <code>~/.config/Claude/local-agent-mode-sessions</code>
+sonst. <code>--cowork-root &quot;&quot;</code> schaltet sie ab.</p>
+<h2 id="referenz-der-kommandozeile">3. Referenz der Kommandozeile</h2>
+<p>Jede Ein- und Ausgabe ist über die Kommandozeile erreichbar; nichts
+ist fest verdrahtet. <code>--help</code> druckt jede Option mit ihrer
+Vorgabe.</p>
+<h3 id="positionsargument">Positionsargument</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<tbody>
+<tr>
+<td><code>session_id</code></td>
+<td>UUID des Transkripts (der <code>.jsonl</code>-Dateiname). Bei
+<code>--index</code> oder <code>--import-claude-ai</code> optional.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="auffinden-und-ablage">Auffinden und Ablage</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Vorgabe</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--projects-root DIR</code></td>
+<td><code>~/.claude/projects</code></td>
+<td>wo Claude Code Sitzungen schreibt</td>
+</tr>
+<tr>
+<td><code>--cowork-root DIR</code></td>
+<td>je Plattform automatisch</td>
+<td><em>Cowork</em>-Sitzungen von Claude Desktop, in die Erkennung
+einbezogen, wenn das Verzeichnis existiert; <code>&quot;&quot;</code> schaltet
+ab</td>
+</tr>
+<tr>
+<td><code>--archive-dir DIR</code></td>
+<td><code>$CLAUDE_ARCHIVE_DIR</code> oder
+<code>~/claude-archives</code></td>
+<td>wohin Archive, <code>index.html</code> und <code>logs/</code>
+gehen</td>
+</tr>
+<tr>
+<td><code>--out PATH</code></td>
+<td>—</td>
+<td>Ausgabepfad-<strong>Stamm</strong> für ein einzelnes Archiv; jedes
+Format hängt seine eigene Endung an
+(<code>--out report.pdf --format html</code> schreibt
+<code>report.html</code>). Überschreibt die Benennung durch
+<code>--archive-dir</code></td>
+</tr>
+<tr>
+<td><code>--title TEXT</code></td>
+<td>der eigene <code>ai-title</code> der Sitzung</td>
+<td>Seitentitel; bestimmt auch den Dateinamens-<em>Slug</em>. Erneutes
+Archivieren mit anderem Titel schreibt eine neue Datei</td>
+</tr>
+<tr>
+<td><code>--summary-file FILE</code></td>
+<td>Platzhalter</td>
+<td>HTML-Fragment (<code>h3</code>/<code>ul</code>-Blöcke), das als
+handgeschriebene Sitzungszusammenfassung dargestellt wird</td>
+</tr>
+</tbody>
+</table>
+<h3 id="inhalt">Inhalt</h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Vorgabe</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--format LIST</code></td>
+<td><code>html</code></td>
+<td>kommagetrennt: <code>html</code>, <code>text</code>,
+<code>markdown</code> (oder <code>md</code>), <code>latex</code>,
+<code>pdf</code></td>
+</tr>
+<tr>
+<td><code>--tool-output on\|off</code></td>
+<td><code>on</code></td>
+<td>Werkzeug-Ein- und -Ausgabe einbeziehen. Unabhängig von
+<code>--format</code>. <code>off</code> reduziert jeden Werkzeugaufruf
+auf eine beschriftete Zeile — meist das, was man für LaTeX/PDF will</td>
+</tr>
+<tr>
+<td><code>--max-tool-output N</code></td>
+<td><code>16384</code></td>
+<td>die Mitte jeder Werkzeugausgabe über N Zeichen auslassen; jede
+Auslassung wird auf der Seite gezählt. <code>0</code> = nie</td>
+</tr>
+<tr>
+<td><code>--full</code></td>
+<td>aus</td>
+<td>nie auslassen (wie <code>--max-tool-output 0</code>)</td>
+</tr>
+<tr>
+<td><code>--subagents on\|off</code></td>
+<td><code>on</code></td>
+<td>Subagenten-Transkripte als Anhangsabschnitte darstellen. Mit
+<code>off</code> bleiben sie im Treuebericht aufgeführt und ihr
+Verbrauch zählt weiter</td>
+</tr>
+<tr>
+<td><code>--no-follow-chain</code></td>
+<td>aus</td>
+<td>genau die angegebene ID archivieren, auch wenn eine vollständigere
+Fortsetzung existiert</td>
+</tr>
+<tr>
+<td><code>--fragment</code></td>
+<td>aus</td>
+<td>mit <code>--format latex</code>: nur der Rumpf, keine Präambel,
+transliteriert, damit er unter pdflatex wie unter XeLaTeX kompiliert.
+Nicht mit <code>pdf</code> kombinierbar</td>
+</tr>
+<tr>
+<td><code>--paginate N</code></td>
+<td><code>0</code></td>
+<td>teilt das HTML in Seiten zu N Beiträgen; Seite 1 behält
+Zusammenfassung, Verbrauch und Treuebericht; die Seitenleiste verlinkt
+über die Seiten</td>
+</tr>
+<tr>
+<td><code>--lang CODE</code></td>
+<td><code>$CLAUDE_ARCHIVE_LANG</code> oder <code>en</code></td>
+<td><code>en</code>, <code>pt-BR</code>, <code>es</code>,
+<code>de</code>, <code>fr</code>: die Sprache der eigenen Worte des
+Archivars in jedem Format und im Index. Das Gespräch wird nie übersetzt
+(siehe §4, <em>Sprache</em>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="index">Index</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--index</code></td>
+<td><code>index.html</code> in <code>--archive-dir</code> neu erzeugen
+und beenden</td>
+</tr>
+<tr>
+<td><code>--watch SECONDS</code></td>
+<td>mit <code>--index</code>: alle SECONDS (mindestens 30) neu erzeugen,
+bis Ctrl+C, und die Seite zum Selbstnachladen markieren; beim Anhalten
+wird der Index noch einmal geschrieben, sodass er sich nicht mehr
+nachlädt</td>
+</tr>
+</tbody>
+</table>
+<h3 id="claude.ai-import">claude.ai-Import</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--import-claude-ai FILE</code></td>
+<td>Gespräche aus einer claude.ai-<code>conversations.json</code>
+importieren</td>
+</tr>
+<tr>
+<td><code>--conversation TEXT</code></td>
+<td>nur Gespräche, deren Name oder UUID TEXT enthält (ohne Beachtung der
+Groß-/Kleinschreibung)</td>
+</tr>
+<tr>
+<td><code>--list-conversations</code></td>
+<td>die Gespräche des Exports auflisten und beenden</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ausgabesteuerung-und-protokollierung">Ausgabesteuerung und
+Protokollierung</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Option</th>
+<th>Bedeutung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--verbose</code></td>
+<td>Detail je Schritt (analysierte Dateien, Kompilierdurchläufe, Pfad
+des Prüfprotokolls)</td>
+</tr>
+<tr>
+<td><code>--quiet</code></td>
+<td>nichts außer Warnungen ausgeben; das Prüfprotokoll erfasst weiterhin
+alles</td>
+</tr>
+<tr>
+<td><code>--log-dir DIR</code></td>
+<td>wohin das Prüfprotokoll je Lauf geht (Vorgabe
+<code>&lt;archive-dir&gt;/logs/</code>)</td>
+</tr>
+<tr>
+<td><code>--version</code></td>
+<td>Version des Archivars ausgeben und beenden</td>
+</tr>
+<tr>
+<td><code>--help</code></td>
+<td>Optionsreferenz</td>
+</tr>
+</tbody>
+</table>
+<p>Ungültige Kombinationen werden abgelehnt, bevor etwas geschrieben
+wird: <code>--watch</code> ohne <code>--index</code>;
+<code>--conversation</code>/<code>--list-conversations</code> ohne
+<code>--import-claude-ai</code>; <code>--fragment</code> ohne
+<code>latex</code> oder zusammen mit <code>pdf</code>;
+<code>--verbose</code> mit <code>--quiet</code>; ein unbekannter
+<code>--format</code>-Wert.</p>
+<h2 id="was-erzeugt-wird">4. Was erzeugt wird</h2>
+<h3 id="dateien">Dateien</h3>
+<p>In <code>--archive-dir</code> (oder am <code>--out</code>-Stamm),
+eine Datei je Format:
+<code>&lt;session-id&gt;_&lt;title-slug&gt;.html|.txt|.md|.tex|.pdf</code>.
+Ein LaTeX-Rumpf aus <code>--fragment</code> heißt
+<code>&lt;stem&gt;_fragment.tex</code>. Paginiertes HTML ergänzt
+<code>&lt;stem&gt;_p2.html</code>, <code>&lt;stem&gt;_p3.html</code>, ….
+claude.ai-Importe heißen <code>&lt;uuid-prefix&gt;_&lt;slug&gt;</code>.
+<code>--index</code> schreibt <code>index.html</code>. Jeder Lauf
+schreibt <code>logs/&lt;timestamp&gt;_&lt;label&gt;.log</code>.</p>
+<p>Ist eine Sitzung ein fortgesetztes oder überbrücktes Gespräch, wird
+die Datei nach dem tatsächlich archivierten Transkript benannt (der
+vollständigsten Datei der Kette), und die Seite hält fest, welche ID
+angefragt wurde.</p>
+<h3 id="die-seite">Die Seite</h3>
+<p>Jedes Format trägt, in dieser Reihenfolge: die
+<strong>Sitzungszusammenfassung</strong> (handgeschrieben über
+<code>--summary-file</code>, sonst ein Platzhalter), <strong>Verbrauch
+und Kosten</strong>, den <strong>Treuebericht</strong>, dann das
+<strong>Transkript</strong>, dann
+<strong>Subagenten-Transkripte</strong> als Anhänge.</p>
+<p>Beitragsarten und wie jedes Format sie zeigt:</p>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Beitrag</th>
+<th>HTML</th>
+<th>Text / Markdown</th>
+<th>LaTeX / PDF</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Menschlicher Prompt (P<em>n</em>)</td>
+<td>rechtsbündige Sprechblase, wortgetreu, dicktengleich bei Spalten,
+URLs verlinkt</td>
+<td>wortgetreu, nie neu umbrochen (Markdown: eingezäunt)</td>
+<td>wortgetreuer Kasten</td>
+</tr>
+<tr>
+<td>Claudes Antwort (R<em>n</em>)</td>
+<td>Markdown gerendert</td>
+<td>Prosa neu umbrochen (Markdown: lebendes Markdown)</td>
+<td>Markdown → LaTeX</td>
+</tr>
+<tr>
+<td>Denken</td>
+<td>eingeklappt; in der Praxis leer (siehe §7)</td>
+<td>beschriftet</td>
+<td>beschrifteter Kasten</td>
+</tr>
+<tr>
+<td>Werkzeugaufruf</td>
+<td>eingeklappte Ein-/Ausgabe, Fehler- und Wartezustände,
+Bildschirmfotos</td>
+<td>vollständige Ein-/Ausgabe oder eine Zeile
+(<code>--tool-output</code>)</td>
+<td>vollständige Ein-/Ausgabe oder nur Titelkasten</td>
+</tr>
+<tr>
+<td>Eingefügtes Bild</td>
+<td>eingebettet</td>
+<td>als weggelassen angekündigt</td>
+<td>als weggelassen angekündigt</td>
+</tr>
+<tr>
+<td>Harness / System / Ereignis</td>
+<td>eingeklappte Spur mit dem Klassifikationsbeleg</td>
+<td>beschriftete Blöcke</td>
+<td>beschriftete Kästen</td>
+</tr>
+<tr>
+<td>Subagenten-Transkript</td>
+<td>ausklappbarer Anhang, verlinkt vom erzeugenden Aufruf</td>
+<td>Anhangsabschnitt</td>
+<td>Anhangsabschnitt</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sprache">Sprache</h3>
+<p><code>--lang pt-BR|es|de|fr</code> (oder die Umgebungsvariable
+<code>CLAUDE_ARCHIVE_LANG</code>; die Option gewinnt; Vorgabe
+<code>en</code>) legt die Sprache von allem fest, was der Archivar
+selbst schreibt: das Seitengerüst und seine Bedienelemente, die
+Beitragsbeschriftungen, die Sitzungsangaben, die Hinweise zu Verbrauch
+und Kosten, den Treuebericht, den Subagenten-Anhang, die Formathinweise
+der Text-, Markdown- und LaTeX-Ausgaben und die Indexseite.
+<code>&lt;html lang&gt;</code> und das eingebettete Metadatenfeld
+<code>lang</code> halten die Wahl fest; das eigenständige LaTeX lädt
+polyglossia, wenn es installiert ist, behält <strong>Englisch als
+Standardsprache</strong> — die Prosa des Gesprächs wird wie Englisch
+getrennt und gesetzt, sodass eine französische Seite nie Leerzeichen vor
+Claudes <code>!</code> einfügt — und hüllt nur die eigenen Worte des
+Archivars in die Dokumentsprache. Ein <code>--fragment</code> setzt
+diese Worte mit Akzentmakros (<code>\&#39;{e}</code>, <code>\&quot;{a}</code>,
+<code>\ss{}</code>), damit pdflatex sie unversehrt druckt, und zählt sie
+nie in der Verlusthinweis des Fragments mit.</p>
+<p>Das Gespräch wird nie übersetzt. Prompts, Antworten, Denken,
+Werkzeugnamen, Werkzeug-Ein- und -Ausgabe, System- und Harness-Text,
+Modellnamen, Titel, Pfade, Daten (ISO) und Zahlen sind in jeder Sprache
+dieselben Bytes — die Suite rendert das Prüfmuster in allen fünf
+Sprachen und prüft, dass jedes Gesprächsfragment der englischen Seite in
+den anderen wortgetreu vorhanden ist. Ereignisabzeichen und
+Anhangsbeschriftungen werden dort übersetzt, wo sie dargestellt werden;
+die Datensatztypnamen in den Treuetabellen (<code>human turn</code>,
+<code>tool_use</code>, …) sind Parser-Vokabular und bleiben englisch,
+ebenso der Stempel <code>archiver v…</code>, den der Index zurückliest.
+Prüfprotokoll, Konsole (<code>--verbose</code>) und <code>--help</code>
+bleiben in jeder Sprache englisch. Ein unbekannter Code — in der Option
+oder in der Variablen — wird abgelehnt, bevor etwas geschrieben
+wird.</p>
+<h3 id="referenzmarken">Referenzmarken</h3>
+<p>Jeder menschliche Prompt ist <code>P1, P2, …</code> und jede Antwort
+<code>R1, R2, …</code>, fortlaufend innerhalb des Dokuments; Beiträge
+von Subagenten erhalten das Präfix <code>A1.</code>, <code>A2.</code>
+(also <code>A2.R4</code>). Im HTML sind die Marken Anker:
+<code>page.html#P32</code> verlinkt direkt auf den Prompt.</p>
+<h3 id="treuebericht">Treuebericht</h3>
+<p>Jeder Quelldatensatz wird <strong>dargestellt</strong> (erzeugte
+einen oder mehrere Beiträge), <strong>eingefaltet</strong> (ein
+Werkzeugergebnis, das in seinen Aufruf aufgenommen wurde) oder
+<strong>gezählt</strong> (Metadaten ohne Transkriptinhalt — und
+beschädigte Zeilen). Die drei Zahlen werden auf der Seite gegen die
+Datensatzzahl der Quelle abgeglichen; gehen sie nicht auf, sagt die
+Seite das, statt es zu verbergen. Der Bericht listet außerdem die
+Datensätze nach Typ, die Inhaltsblöcke, was dargestellt und was gezählt
+wurde, den Beleg menschlich-gegen-eingespielt je Datensatz, die
+Subagentendateien und die Vorbehalte (leere Denkblöcke, unaufgelöste
+Werkzeugaufrufe, Zeitpunkt der Momentaufnahme gegenüber dem letzten
+Datensatz der Quelle).</p>
+<h3 id="verbrauch-und-kosten">Verbrauch und Kosten</h3>
+<p>Tokens je Modell, dedupliziert nach <code>requestId</code> — eine
+API-Antwort wird als mehrere Datensätze geschrieben, die denselben
+Verbrauch wiederholen, und sie zu summieren überschätzt die Ausgabe bei
+werkzeuglastigen Sitzungen um ~2,3×. Cache-Lesevorgänge sowie 5-Minuten-
+und 1-Stunden-Cache-Schreibvorgänge werden getrennt, und die Kosten
+werden zu <strong>öffentlichen Listenpreisen</strong> aus der
+<code>PRICING</code>-Tabelle am Kopf des Skripts geschätzt
+(Cache-Lesevorgänge zu 0,1× der Eingabe, Schreibvorgänge zu 1,25× / 2×).
+Das ist nicht, was ein Abonnement in Rechnung stellt. Modelle, die die
+Tabelle nicht kennt, werden als „kein Listenpreis” gemeldet. Der
+Verbrauch von Subagenten wird eingerechnet.</p>
+<p><strong>Gemeldete Kosten.</strong> Claude Code ≥ 2.1.9x schreibt auch
+seinen eigenen Zähler in die Sitzungsdatei
+(<code>cost-state</code>-Datensätze: laufende Kosten, Kosten je Modell,
+von Werkzeugen hinzugefügte und entfernte Zeilen). Ist er vorhanden,
+zeigt die Seite diese Zahl als Spalte <em>gemeldete Kosten</em> neben
+der Listenschätzung, als Zeile in den Sitzungsangaben und als
+<code>reported_cost_usd</code>, <code>reported_cost_runs</code>,
+<code>reported_cost_partial</code>, <code>lines_added</code>,
+<code>lines_removed</code> in den eingebetteten Metadaten; die Formate
+Text, Markdown und LaTeX tragen denselben Satz. Der Zähler gilt
+<strong>je Prozess</strong>: Jedes <code>claude --resume</code> startet
+einen neuen Zähler, und Läufe vor der Existenz des Datensatzes schrieben
+keinen — die Zahl ist also die Summe der letzten Momentaufnahme jedes
+Laufs (aus allen Dateien der Kette einer fortgesetzten Sitzung
+zusammengetragen) und wird als <strong>teilweise</strong>
+gekennzeichnet, wenn die Sitzung mehr als eine Minute vor ihrem ersten
+gemessenen Lauf begann. Dann nennt die Seite, welche Ausgaben nicht
+abgedeckt sind, und der Index zeigt weiter die Listenschätzung; sonst
+zeigt der Index „$X gemeldet”. Ein Lauf, den Claude Code nicht
+vollständig bepreisen konnte, wird vermerkt („die gemeldete Summe ist
+eine Untergrenze”). In der Praxis lag der Zähler bei einer Sitzung mit
+einem Lauf ~30 % unter der Listenschätzung.</p>
+<h3 id="die-bedienelemente-der-html-seite">Die Bedienelemente der
+HTML-Seite</h3>
+<p>Seitenleiste: <strong>Suche</strong> (blendet Beiträge aus, deren
+Text nicht passt), <strong>Filter</strong> (grenzt die Inhaltsliste ein;
+Taste <code>/</code>), Spur-Schalter (Denken, Werkzeuge, Harness,
+Ereignisse, Subagenten), alles auf-/zuklappen,
+<strong>Themenschalter</strong> (hell oder dunkel, je Browser gemerkt;
+folgt dem Betriebssystem, bis Sie wählen), Sitzungsangaben, Inhalt.
+Tasten: <code>j</code>/<code>k</code> springen zwischen menschlichen
+Beiträgen.</p>
+<p>Eine <strong>Schutzverweigerung mit Modellwechsel</strong> (Claude
+Code schreibt einen
+<code>system/model_refusal_fallback</code>-Datensatz, wenn eine
+Nachricht abgelehnt wird und die Sitzung mit einem anderen Modell
+weitergeht) wird in jedem Format als Ereignis dargestellt: das Abzeichen
+<em>Model fallback after a safeguard refusal</em>, das Detail
+<code>&lt;original&gt; -&gt; &lt;fallback&gt; (category: …), N message(s) retracted</code>
+und ein Rumpf, der angibt, wie viele der zurückgezogenen Nachrichten in
+der Quelldatei fehlen. Die HTML-Sitzungsangaben ergänzen eine Zeile
+<em>Harness retractions</em>. Die Rückschau, die Claude Code bei Ihrer
+Rückkehr druckt (<code>away_summary</code>), ist das Ereignis <em>Away
+summary</em>.</p>
+<h3 id="der-index">Der Index</h3>
+<p><code>--index</code> durchsucht jede Sitzung auf der Festplatte und
+markiert sie als <strong>archiviert</strong>, <strong>veraltet</strong>
+(die Quelle hat neuere Datensätze als das Archiv),
+<strong>abgedeckt</strong> (in ein anderes, archiviertes Transkript
+fortgesetzt), <strong>Alt-v1</strong> oder <strong>nicht
+archiviert</strong>; listet Archive, deren Quelle nicht auf der
+Festplatte liegt (claude.ai-Importe, gelöschte Transkripte); und zeigt
+eine Aktivitätsspalte, deren Altersangaben im Browser altern. Die
+Kopfzeilen sortieren per Klick. <code>--watch</code> erzeugt ihn
+fortlaufend neu: Jede geschriebene Seite trägt ein
+<code>&lt;meta http-equiv=&quot;refresh&quot;&gt;</code>, damit ein offener
+Browser mitgeht. Wenn die Beobachtung endet — Ctrl+C, ein geschlossenes
+Konsolenfenster, ein <code>taskkill</code> auf die PID — wird der Index
+noch einmal ohne diese Marke geschrieben, sodass eine offen gelassene
+Seite nicht länger alle N Sekunden einen eingefrorenen Index nachlädt.
+Kann dieses letzte Schreiben nicht erfolgen (Datei gesperrt, Festplatte
+voll), sagt der Lauf das und nennt, was noch auf der Festplatte liegt;
+führen Sie <code>--index</code> erneut aus, um ihn zu ersetzen. Ein
+erstes <code>--index</code> in ein noch nicht existierendes Verzeichnis
+legt dieses an.</p>
+<p><strong>Suche über alle Archive.</strong> Die Indexseite trägt ein
+Suchfeld über jeden menschlichen Prompt jedes Archivs — alle Seiten
+eines paginierten Archivs und Subagenten-Prompts (<code>A1.P1</code>)
+eingeschlossen —, beim Indizieren aus dem eigenen HTML der Archive
+zurückgelesen, sodass Archive früherer Versionen und claude.ai-Importe
+gleichermaßen erfasst sind. Ab zwei eingegebenen Zeichen werden die
+passenden Prompts aufgelistet (Sitzung, Marke, Titel, hervorgehobener
+Ausschnitt; die ersten 200 werden gezeigt), jeder mit direktem Link auf
+den Anker des Prompts auf seiner Seite, und die Sitzungstabelle wird auf
+die Treffer eingegrenzt. Prompts sind im Index auf 400 Zeichen begrenzt;
+Claudes Antworten sind innerhalb jeder Seite durchsuchbar, nicht über
+Archive hinweg (siehe Einschränkungen).</p>
+<h2 id="latex-und-pdf">5. LaTeX und PDF</h2>
+<p>Voraussetzungen: eine TeX-Installation, die <code>xelatex</code>,
+<code>fvextra</code>, <code>tcolorbox</code>, <code>booktabs</code>,
+<code>array</code>, <code>enumitem</code>, <code>xcolor</code>,
+<code>hyperref</code> und die DejaVu-Schriften bereitstellt (TeX Lives
+<code>scheme-full</code> hat alles davon). Schriften werden <strong>nach
+Dateiname aus TeX Live</strong> geladen, nicht aus dem System, sodass
+die Ausgabe nicht von der Schriftdatenbank des Rechners abhängt.</p>
+<ul>
+<li><code>pdf</code> = das eigenständige LaTeX, zweimal von
+<code>xelatex</code> kompiliert (wegen des Inhaltsverzeichnisses);
+<code>.aux/.log/.out/.toc</code> werden bei Erfolg entfernt und die
+<code>.tex</code> nur behalten, wenn <code>latex</code> ebenfalls
+angefordert war. Bei einem Fehlschlag werden die letzten 30 Zeilen des
+Protokolls gedruckt und die <code>.tex</code> bleibt zur Untersuchung
+liegen.</li>
+<li><code>--fragment</code> gibt einen Rumpf zum <code>\input</code> in
+Ihr eigenes Dokument aus. Er ist engine-neutral: Griechisch wird zu
+Mathematik (<code>Γ</code> → <code>$\Gamma$</code>), Tief- und
+Hochstellungen werden zu Mathematik, Pfeile und Rahmenzeichen zu ASCII,
+Akzente werden auf den Grundbuchstaben reduziert. Ihre Präambel braucht
+<code>\usepackage{fvextra} \usepackage{xcolor} \usepackage{enumitem} \usepackage{booktabs} \usepackage{array} \usepackage[most]{tcolorbox}</code>.
+Die Beitragsumgebungen sind mit <code>\@ifundefined</code> definiert,
+sodass Sie sie aus Ihrer Präambel umgestalten können.</li>
+<li>Emoji und andere Glyphen, die keine TeX-Schrift setzen kann, sowie
+C0/C1-Steuerbytes (NULs aus UTF-16-Konsolenmitschnitten, Rückschritte),
+werden entfernt und <strong>im Dokument gezählt</strong>. Zeilen über
+500 Zeichen werden hart umbrochen, damit TeX sie setzen kann; die Anzahl
+wird genannt.</li>
+<li>Ein Beitrag länger als 1.500 gesetzte Zeilen (ein riesiger
+Einfügeblock oder eine Werkzeugausgabe) wird in aufeinanderfolgende
+Kästen mit dem Titel <em>(part k/n)</em> geteilt: Ein einziger
+umbruchfähiger Kasten, der ihn ganz enthält, erschöpft TeXs Speicher.
+Das Dokument nennt, wie viele Beiträge geteilt wurden; nichts wird
+weggelassen.</li>
+<li><strong>Markdown-Tabellen werden in Stücke von höchstens 30
+gesetzten Zeilen zerlegt</strong>, jedes ein eigenes
+<code>tabular</code>, das die Kopfzeile wiederholt und mit <em>(table
+continued)</em> gekennzeichnet ist, denn ein einzelnes
+<code>tabular</code> kann nicht über eine Seite hinweg umbrechen. Eine
+Tabelle, deren natürliche Breite die Zeile übersteigt, erhält
+gleichmäßig umbrechende <code>p</code>-Spalten statt natürlicher, sodass
+keine Zelle über das Papier hinausläuft. Beides waren vor 2.6.4 stille
+Verluste.</li>
+<li>Bestätigt durch einen vollständigen Durchlauf über ein echtes Archiv
+mit 64 Sitzungen (6.245 Seiten, 69 Minuten,
+<code>--tool-output off</code>, 64/64 kompiliert, August 2026) und durch
+eine Kompilier-und-Zähl-Prüfung in der Suite: Eine Antwort, die eine
+Tabelle mit 300 Zeilen ist, muss die Seiten belegen, die ihre Zeilen
+brauchen, und nicht bloß mit 0 enden.</li>
+<li>Kosten der vollständigen Werkzeug-Ein-/Ausgabe, gemessen: eine
+Sitzung mit 636 Datensätzen → 643 Seiten in etwa vier Minuten; eine
+Sitzung mit 1.655 Datensätzen umfasst 92 Seiten mit
+<code>--tool-output off</code> und 260 mit ihr.</li>
+</ul>
+<h2 id="protokollierung-und-prüfung">6. Protokollierung und Prüfung</h2>
+<p>Konsole: standardmäßig Fortschrittszeilen; <code>--quiet</code>
+schaltet sie stumm; <code>--verbose</code> ergänzt Detail je Schritt.
+Warnungen gehen immer nach stderr. Jeder Aufruf schreibt
+<code>&lt;archive-dir&gt;/logs/&lt;YYYYMMDD-HHMMSS&gt;_&lt;label&gt;.log</code>
+(oder unter <code>--log-dir</code>) mit den Versionen von Archivar und
+Python, der exakten Kommandozeile, dem Arbeitsverzeichnis, Start- und
+Endzeit, jeder Konsolenmeldung und dem Ausgang (<code>ok</code>,
+<code>failed: …</code>, <code>crashed: …</code>,
+<code>interrupted</code>). Die Protokollierung bricht einen Lauf nie
+ab.</p>
+<h2 id="bekannte-einschränkungen">7. Bekannte Einschränkungen</h2>
+<p>Das sind die ehrlichen Kanten. Jede wird auf der Seite genannt, auf
+der sie gilt.</p>
+<ul>
+<li><strong>Der Denktext steht nie im Transkript.</strong> Claude Code
+fordert das Denken mit <code>display: &quot;omitted&quot;</code> an; jeder
+Denkblock auf der Festplatte ist leer. Das Archiv zeigt, <em>dass</em>
+Claude an einer Stelle gedacht hat, nie was.</li>
+<li><strong>Die Listenkosten sind eine Schätzung</strong>, keine
+Rechnung; die <code>PRICING</code>-Tabelle ist fest eingetragen (Preise
+von August 2026) und muss bei Preisänderungen bearbeitet werden. Die
+<strong>gemeldeten Kosten</strong> sind Claude Codes eigene Zahl, gelten
+aber je Prozess: Über mehrere Läufe fortgesetzte Sitzungen oder solche,
+die vor Claude Code 2.1.9x begannen, sind nur teilweise erfasst und
+sagen das (<code>partial</code>).</li>
+<li><strong>Eine laufende Sitzung ist um einen Werkzeugaufruf
+versetzt</strong>: Archivieren aus der Sitzung heraus lässt den eigenen
+Aufruf des Archivars unaufgelöst; die Seite sagt das.</li>
+<li><strong>Der claude.ai-Export enthält nur eigenständige
+Chats</strong> — keine Projektgespräche, keine
+<em>Cowork</em>-Sitzungen, keinen Verbrauch und keine Modellnamen. Er
+zielt auf das Exportschema von Mitte 2026.</li>
+<li><strong>Die <em>Cowork</em>-Erkennung folgt dem dokumentierten
+Aufbau</strong>, wurde aber nur gegen synthetische Daten geprüft; der
+lokale <em>Cowork</em>-Speicher übersteht eine Neuinstallation der App
+nicht.</li>
+<li><strong>Cloud-Sitzungen ohne Brücke zu Ihrem Rechner lassen sich
+nicht archivieren.</strong></li>
+<li><strong>Text und Markdown können keine Bilder tragen</strong>; sie
+werden als weggelassen angekündigt. LaTeX/PDF ebenso; das HTML enthält
+sie.</li>
+<li><strong>Die Markdown-Darstellung deckt Claudes eigene Prosa
+ab</strong> (Überschriften, Listen inkl. verschachtelter, Tabellen,
+Codeblöcke beliebiger Länge, Zitate,
+Inline-Code/fett/kursiv/durchgestrichen/Links), nicht beliebiges
+CommonMark: kein HTML-Durchreichen, keine Referenzlinks, keine Fußnoten;
+Tabellenzellen werden an jedem <code>|</code> getrennt. In LaTeX und PDF
+wird eine Tabelle zerlegt und, wenn breit, umbrochen (§5): Alle Zellen
+überleben, aber eine sehr breite Tabelle wird spaltenweise ausgeglichen
+statt nach Geschmack gesetzt.</li>
+<li><strong>Die Einstufung menschlich-gegen-eingespielt</strong> ist bei
+Datensätzen mit <code>promptSource</code> / <code>origin.kind</code>
+maßgeblich; ältere Datensätze greifen auf Textmarker zurück, und der
+verwendete Beleg wird je Datensatz im Treuebericht aufgeführt.</li>
+<li><strong>Zeitstempel sind lokal</strong> zur archivierenden Maschine
+(im HTML für UTC mit der Maus darüberfahren).</li>
+<li><strong>Erneutes Archivieren mit anderem <code>--title</code>
+schreibt eine neue Datei</strong> neben die alte, statt sie zu
+überschreiben.</li>
+<li><strong>Skalierung</strong>: Jeder Lauf liest alle
+<code>.jsonl</code>-Dateien unter den Wurzeln erneut, um Ketten
+aufzulösen; der Index vergleicht UUID-Mengen paarweise. Gut für Hunderte
+von Sitzungen; langsam für Tausende.</li>
+<li><strong>Plattformen</strong>: entwickelt und geprüft unter Windows;
+die Suite und eine statische pyflakes-Prüfung laufen in der CI unter
+Linux, Windows und macOS. Linux hatte einen echten Lauf (31.08.2026,
+WSL2 Ubuntu, Python 3.14: alle Nicht-PDF-Formate einer echten Sitzung,
+<code>--index</code> und das laute Scheitern ohne <code>xelatex</code>).
+Im Feld unbestätigt: PDF und TeX-Schriftpfade unter Linux, unter Linux
+erzeugte <em>Cowork</em>-Sitzungen und macOS insgesamt. Unter WSL machte
+das Lesen der Transkripte über <code>/mnt/c</code> den Scan etwa viermal
+langsamer als nativ (18 s gegenüber 4 s für 281 Transkripte) — halten
+Sie die Wurzeln auf der Linux-Seite.</li>
+<li><strong>Der Aktivitätsverfall im Live-Index ist einseitig</strong>:
+Eine Sitzung kann auf dem Bildschirm still werden, aber ohne
+Neuerzeugung (<code>--watch</code>) nicht wieder aktiv.</li>
+<li><strong>Die archivübergreifende Suche erfasst Prompts, nicht
+Antworten</strong> (und die ersten 400 Zeichen jedes Prompts). Antworten
+sind innerhalb einer Seite durchsuchbar. Auch die Antworten zu
+indizieren würde die Indexdatei vervielfachen und ist
+zurückgestellt.</li>
+</ul>
+<h2 id="tests">8. Tests</h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
+<p>528 Prüfungen gegen die synthetischen Sitzungen in
+<code>examples/</code> (kein echtes Transkript nötig).
+LaTeX-/PDF-Kompilierprüfungen werden übersprungen, nicht als Fehler
+gewertet, wenn kein TeX im <code>PATH</code> liegt. Um es an einem
+eigenen Gespräch zu erproben:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="va">CLAUDE_PROJECTS</span><span class="op">=</span>~/.claude/projects <span class="va">SAMPLE_SESSION</span><span class="op">=&lt;</span>id<span class="op">&gt;</span> python <span class="ex">tests/test_archiver.py</span></span></code></pre></div>
+<p>Die Suite prüft außerdem, dass dieses Handbuch und
+<code>AGENTS.md</code> jede Kommandozeilenoption dokumentieren und dass
+die im README genannte Prüfungszahl aktuell ist.</p>
+<h2 id="dieses-handbuch-bauen">9. Dieses Handbuch bauen</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> docs/build_manual.py</span></code></pre></div>
+<p>Rendert <code>USER_MANUAL.md</code> — und jede Übersetzung — nach
+<code>.html</code> und <code>.pdf</code> mit pandoc (und xelatex für das
+PDF), wenn verfügbar, sonst mit dem eigenen Markdown-Renderer des
+Archivars für das HTML und einem Hinweis, dass das PDF übersprungen
+wurde. Die gebauten Dateien sind eingecheckt, damit Leser kein Werkzeug
+brauchen.</p>
+<p>Englisch ist der Referenztext. Jede Übersetzung hält den Digest des
+englischen Textes fest, aus dem sie entstand, und die Suite schlägt
+fehl, wenn das Englische sich bewegt hat und die Übersetzung nicht;
+<code>python docs/build_manual.py --stamp</code> schreibt diese Digests
+— nachdem eine Übersetzung nachgeführt wurde, nie statt dessen.</p>
+</body>
+</html>

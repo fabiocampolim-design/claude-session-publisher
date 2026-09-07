@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="generator" content="pandoc 3.10.2" />
@@ -95,7 +95,7 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 <body>
 <header id="title-block-header">
 <h1 class="title">claude-session-publisher — User Manual</h1>
-<p class="subtitle">transcript_archiver.py v2.7.7</p>
+<p class="subtitle">transcript_archiver.py v2.8.0</p>
 </header>
 <nav id="TOC" role="doc-toc">
 <ul>
@@ -144,6 +144,8 @@ Building this manual</a></li>
 </nav>
 <h1 id="claude-session-publisher-user-manual">claude-session-publisher —
 User Manual</h1>
+<p><strong>English</strong> · <a href="USER_MANUAL.pt-BR.md">Português
+(Brasil)</a> · <a href="USER_MANUAL.es.md">Español</a> · <a href="USER_MANUAL.de.md">Deutsch</a> · <a href="USER_MANUAL.fr.md">Français</a></p>
 <p><code>transcript_archiver.py</code> turns a Claude conversation into
 a self-contained document — HTML, plain text, Markdown, LaTeX or PDF —
 with a fidelity report that reconciles every source record against what
@@ -798,7 +800,7 @@ and is deferred.</li>
 </ul>
 <h2 id="tests">8. Tests</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tests/test_archiver.py</span></code></pre></div>
-<p>458 checks against the synthetic sessions in <code>examples/</code>
+<p>528 checks against the synthetic sessions in <code>examples/</code>
 (no real transcript needed). LaTeX/PDF compile checks are skipped, not
 failed, when no TeX is on <code>PATH</code>. To exercise it on a
 conversation of your own:</p>

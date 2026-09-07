@@ -58,7 +58,7 @@ from pathlib import Path
 
 esc = html.escape
 
-VERSION = "2.7.7"
+VERSION = "2.8.0"
 
 # ---------------------------------------------------------------------------
 # Document language (--lang / CLAUDE_ARCHIVE_LANG)

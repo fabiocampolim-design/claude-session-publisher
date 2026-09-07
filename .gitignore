@@ -20,12 +20,18 @@ missfont.log
 demo/
 logs/
 
-# ...except the files the repo genuinely needs.
+# ...except the files the repo genuinely needs. A new root-level document has
+# to be added here or it is silently never committed: `*.md` above is broad on
+# purpose, and 2.8.0's SECURITY.md and translated READMEs were both caught by
+# `git add` refusing them. The suite now checks that each of these is TRACKED,
+# not merely present on disk, so the next one fails before a push, not after.
 !README.md
+!README.*.md
 !AGENTS.md
 !CHANGELOG.md
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md
+!SECURITY.md
 !docs/*.md
 !docs/*.html
 !docs/*.pdf
